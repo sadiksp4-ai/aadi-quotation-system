@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "homepage": "https://sadiksp4-ai.github.io/aadi-quotation-system",
+  "homepage": "https://quote.aadienterprisespune.com",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
