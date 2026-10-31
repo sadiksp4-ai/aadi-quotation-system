@@ -195,7 +195,7 @@ const AUTH_USERS = [
     email: 'aditya@aadienterprises.com',
     password: 'aditya123',
     name: 'Aditya',
-    role: 'Sales Partner',
+    role: '',
     avatarBg: 'from-orange-500 to-amber-600',
     initial: 'A',
   },
@@ -203,7 +203,7 @@ const AUTH_USERS = [
     email: 'abhijit@aadienterprises.com',
     password: 'abhijit123',
     name: 'Abhijit',
-    role: 'Operations Manager',
+    role: '',
     avatarBg: 'from-emerald-500 to-green-600',
     initial: 'A',
   },
@@ -1401,7 +1401,9 @@ function LoginView({ onLogin }) {
                   {u.initial}
                 </span>
                 <span className="text-[14px] font-extrabold text-slate-900">{u.name}</span>
-                <span className="text-[11px] font-medium text-slate-500">{u.role}</span>
+                {u.role && (
+                  <span className="text-[11px] font-medium text-slate-500">{u.role}</span>
+                )}
                 <span className="text-[10px] font-medium text-slate-400">{u.email}</span>
               </button>
             );
@@ -2321,9 +2323,11 @@ export default function App() {
                 <span className="block text-[12px] font-extrabold text-slate-800">
                   {authUser?.name}
                 </span>
-                <span className="block text-[10px] font-medium text-slate-500">
-                  {authUser?.role}
-                </span>
+                {authUser?.role && (
+                  <span className="block text-[10px] font-medium text-slate-500">
+                    {authUser?.role}
+                  </span>
+                )}
               </div>
               <button
                 onClick={() => setAuthUser(null)}
