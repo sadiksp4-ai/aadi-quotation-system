@@ -31,6 +31,15 @@ import {
 } from 'lucide-react';
 import rawProducts from './data/products.json';
 import rawClients from './data/clients.json';
+import { db } from './firebase';
+import {
+  collection,
+  doc,
+  onSnapshot,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+} from 'firebase/firestore';
 
 // drop raw spreadsheet header rows that occasionally ship inside the feed
 const BASE_URL = import.meta.env.BASE_URL;
@@ -1481,7 +1490,7 @@ export default function App() {
   const [cats, setCats] = useState([]);
   const [sort, setSort] = useState('relevance');
   const [customProducts, setCustomProducts] = useState(loadCustomProducts);
-  const [productOverrides, setProductOverrides] = useState(loadProductOverrides);
+  const [productOverrides, setProductOverrides] = useState({});
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
   const [minPrice, setMinPrice] = useState(GLOBAL_MIN);
@@ -1501,7 +1510,7 @@ export default function App() {
   const [toast, setToast] = useState('');
   const toastTimer = useRef(null);
   const [recordsOpen, setRecordsOpen] = useState(false);
-  const [archive, setArchive] = useState(loadArchive);
+  const [archive, setArchive] = useState([]);
   const [currentQuoteId, setCurrentQuoteId] = useState(null);
   const [currentIsInvoice, setCurrentIsInvoice] = useState(false);
   const [statusFilter, setStatusFilter] = useState('All');
@@ -1545,13 +1554,41 @@ export default function App() {
     }
   }, [customProducts]);
 
+  // real-time Firestore sync for quotations
   useEffect(() => {
-    try {
-      localStorage.setItem(OVERRIDES_KEY, JSON.stringify(productOverrides));
-    } catch {
-      /* ignore */
-    }
-  }, [productOverrides]);
+    const unsub = onSnapshot(
+      collection(db, 'quotations'),
+      (snap) => {
+        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        list.sort((a, b) => {
+          const ta = new Date(a.timestamp || a.updatedAt || a.createdAt || 0).getTime();
+          const tb = new Date(b.timestamp || b.updatedAt || b.createdAt || 0).getTime();
+          return tb - ta;
+        });
+        setArchive(list);
+      },
+      (err) => console.error('quotations snapshot error', err),
+    );
+    return () => unsub();
+  }, []);
+
+  // real-time Firestore sync for product overrides
+  useEffect(() => {
+    const unsub = onSnapshot(
+      collection(db, 'product_overrides'),
+      (snap) => {
+        const map = {};
+        snap.docs.forEach((d) => {
+          map[d.id] = d.data();
+        });
+        setProductOverrides(map);
+      },
+      (err) => console.error('product_overrides snapshot error', err),
+    );
+    return () => unsub();
+  }, []);
+
+  // product overrides are synced via Firestore (see above)
 
   useEffect(() => {
     try {
@@ -1666,18 +1703,9 @@ export default function App() {
       return null;
     }
     const quote = buildQuoteObject(statusOverride);
-    setArchive((prev) => {
-      const idx = prev.findIndex((q) => q.id === quote.id);
-      let next;
-      if (idx >= 0) {
-        next = [...prev];
-        next[idx] = quote;
-      } else {
-        next = [quote, ...prev];
-      }
-      persistArchive(next);
-      return next;
-    });
+    setDoc(doc(db, 'quotations', quote.id), quote).catch((err) =>
+      console.error('save quote error', err),
+    );
     setCurrentQuoteId(quote.id);
     showToast(`Quote ${quote.quoteNo} saved (${quote.status})`);
     return quote;
@@ -1702,15 +1730,10 @@ export default function App() {
   };
 
   const updateQuoteStatus = (id, status) => {
-    setArchive((prev) => {
-      const next = prev.map((q) =>
-        q.id === id
-          ? { ...q, status, updatedAt: new Date().toISOString() }
-          : q,
-      );
-      persistArchive(next);
-      return next;
-    });
+    updateDoc(doc(db, 'quotations', id), {
+      status,
+      updatedAt: new Date().toISOString(),
+    }).catch((err) => console.error('update status error', err));
     showToast(`Quote marked as ${status}`);
   };
 
@@ -1719,11 +1742,9 @@ export default function App() {
       !window.confirm('Delete this quotation record? This cannot be undone.')
     )
       return;
-    setArchive((prev) => {
-      const next = prev.filter((q) => q.id !== id);
-      persistArchive(next);
-      return next;
-    });
+    deleteDoc(doc(db, 'quotations', id)).catch((err) =>
+      console.error('delete quote error', err),
+    );
     if (currentQuoteId === id) setCurrentQuoteId(null);
     showToast('Quote deleted');
   };
@@ -1739,11 +1760,9 @@ export default function App() {
       updatedAt: new Date().toISOString(),
       timestamp: new Date().toISOString(),
     };
-    setArchive((prev) => {
-      const next = [invoice, ...prev];
-      persistArchive(next);
-      return next;
-    });
+    setDoc(doc(db, 'quotations', invoice.id), invoice).catch((err) =>
+      console.error('convert invoice error', err),
+    );
     showToast(`Converted to Tax Invoice ${invoice.quoteNo}`);
   };
 
@@ -1801,7 +1820,9 @@ export default function App() {
         return [saved, ...list];
       });
     } else {
-      setProductOverrides((prev) => ({ ...prev, [p.sku]: p }));
+      setDoc(doc(db, 'product_overrides', p.sku), p).catch((err) =>
+        console.error('save product override error', err),
+      );
     }
     setAddModalOpen(false);
     showToast('Product updated successfully');
@@ -2960,11 +2981,9 @@ export default function App() {
           onReset={
             editingProduct && !editingProduct.custom && productOverrides[editingProduct.sku]
               ? () => {
-                  setProductOverrides((prev) => {
-                    const next = { ...prev };
-                    delete next[editingProduct.sku];
-                    return next;
-                  });
+                  deleteDoc(
+                    doc(db, 'product_overrides', editingProduct.sku),
+                  ).catch((err) => console.error('reset override error', err));
                   setAddModalOpen(false);
                   setEditingProduct(null);
                   showToast('Product reset to default');
