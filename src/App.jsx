@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import rawProducts from './data/products.json';
 import rawClients from './data/clients.json';
+import BOQParser from './components/BOQParser';
 import { db } from './firebase';
 import {
   collection,
@@ -1630,6 +1631,7 @@ export default function App() {
   const [customProducts, setCustomProducts] = useState(loadCustomProducts);
   const [productOverrides, setProductOverrides] = useState({});
   const [addModalOpen, setAddModalOpen] = useState(false);
+  const [boqOpen, setBoqOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
   const [minPrice, setMinPrice] = useState(GLOBAL_MIN);
   const [maxPrice, setMaxPrice] = useState(GLOBAL_MAX);
@@ -1918,6 +1920,59 @@ export default function App() {
   const openAddModal = () => {
     setEditingProduct(null);
     setAddModalOpen(true);
+  };
+
+  const handleBOQTransfer = (rows, selectedClient) => {
+    const included = (rows || []).filter((r) => r.include);
+    const newCustom = [];
+    setCart((prevCart) => {
+      const next = { ...prevCart };
+      included.forEach((r, idx) => {
+        let sku = r.sku;
+        const exists = catalog.some((p) => p.sku === sku);
+        if (!sku || !exists) {
+          sku = `BOQ-${Date.now()}-${idx}`;
+          newCustom.push({
+            brand: r.brand || 'Custom',
+            sku,
+            name: r.description || 'BOQ Item',
+            category: 'BOQ Imported',
+            subcategory: '',
+            hsn: r.hsn || '',
+            gst: r.gst || '18%',
+            mrp: Number(r.unitPrice) || 0,
+            sellingPrice: Number(r.unitPrice) || 0,
+            image: r.image || '',
+            custom: true,
+            createdAt: new Date().toISOString(),
+          });
+        }
+        next[sku] = (next[sku] || 0) + (Number(r.qty) || 1);
+      });
+      return next;
+    });
+    if (newCustom.length) {
+      setCustomProducts((prev) => [...newCustom, ...prev]);
+    }
+    if (selectedClient) {
+      const c = clients.find((x) => String(x.id) === String(selectedClient));
+      if (c) {
+        setDetail('clientName', c.legalEntity || c.accountName || '');
+        setDetail('hotelName', c.propertyName || '');
+        setDetail('address', c.address || '');
+        setDetail('shippingAddress', c.address || '');
+        setDetail('contactPerson', c.contactPerson || '');
+        setDetail('designation', c.designation || '');
+        setDetail('contactPhone', c.phone || '');
+        setDetail('contactEmail', c.email || '');
+        setDetail('placeOfSupply', c.placeOfSupply || details.placeOfSupply);
+        const scMatch = String(c.placeOfSupply || '').match(/\((\d+)\)/);
+        if (scMatch) setDetail('stateCode', scMatch[1]);
+      }
+    }
+    setBoqOpen(false);
+    setDrawerOpen(true);
+    showToast(`Transferred ${included.length} BOQ items to quotation`);
   };
 
   const openEditModal = (p) => {
@@ -2431,6 +2486,14 @@ export default function App() {
 
           {/* add product + cart */}
           <div className="order-2 ml-auto flex items-center gap-2 sm:order-3 sm:ml-0">
+            <button
+              onClick={() => setBoqOpen(true)}
+              className="flex items-center gap-1.5 rounded-xl border-2 border-indigo-600 bg-white px-3 py-2 text-[13px] font-bold text-indigo-700 shadow-sm transition hover:bg-indigo-600 hover:text-white active:scale-[.98]"
+              title="Import BOQ / RFQ"
+            >
+              <UploadCloud size={16} />
+              <span className="hidden sm:inline">Import BOQ / RFQ</span>
+            </button>
             <button
               onClick={openAddModal}
               className="flex items-center gap-1.5 rounded-xl border-2 border-slate-900 bg-white px-3 py-2 text-[13px] font-bold text-slate-900 shadow-sm transition hover:bg-slate-900 hover:text-white active:scale-[.98]"
@@ -3136,6 +3199,16 @@ export default function App() {
                 }
               : undefined
           }
+        />
+      )}
+
+      {/* BOQ Parser */}
+      {boqOpen && (
+        <BOQParser
+          catalog={catalog}
+          clients={clients}
+          onTransfer={handleBOQTransfer}
+          onClose={() => setBoqOpen(false)}
         />
       )}
 
