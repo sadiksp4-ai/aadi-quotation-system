@@ -121,6 +121,7 @@ const baseRow = (extra = {}) => ({
   id: Math.random().toString(36).slice(2),
   description: '',
   brand: '',
+  make: '',
   qty: 1,
   unit: 'Nos',
   unitPrice: 0,
@@ -305,74 +306,68 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
     const buf = await file.arrayBuffer();
     const wb = XLSX.read(buf, { type: 'array' });
     const ws = wb.Sheets[wb.SheetNames[0]];
-    const json = XLSX.utils.sheet_to_json(ws, { defval: '' });
-    if (!json.length) return;
-    const headers = Object.keys(json[0]);
-    const ti = pickCol(headers, COL_KEYS.tag);
-    const dimi = pickCol(headers, COL_KEYS.dimension);
-    const techi = pickCol(headers, COL_KEYS.technical);
-    const areai = pickCol(headers, COL_KEYS.area);
-    const di = pickCol(headers, COL_KEYS.description);
-    const bi = pickCol(headers, COL_KEYS.brand);
-    const qi = pickCol(headers, COL_KEYS.qty);
-    const ui = pickCol(headers, COL_KEYS.unit);
-    const si = pickCol(headers, COL_KEYS.spec);
-    const pi = pickCol(headers, COL_KEYS.price);
-    const gi = pickCol(headers, COL_KEYS.gst);
-    const hi = pickCol(headers, COL_KEYS.hsn);
+    const rawRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+    if (!rawRows.length) return;
 
-    const tagIdx = ti >= 0 ? ti : 0;
-    const descIdx = di >= 0 ? di : 1;
-    const dimIdx = dimi >= 0 ? dimi : 2;
-    const qtyIdx = qi >= 0 ? qi : 3;
-    const brandIdx = bi >= 0 ? bi : 4;
-    const techIdx = techi >= 0 ? techi : 5;
-    const areaIdx = areai >= 0 ? areai : -1;
-    const unitIdx = ui >= 0 ? ui : -1;
-    const specIdx = si >= 0 ? si : -1;
-    const priceIdx = pi >= 0 ? pi : -1;
-    const gstIdx = gi >= 0 ? gi : -1;
-    const hsnIdx = hi >= 0 ? hi : -1;
+    const isBrandLike = (val) => {
+      const v = String(val || '').trim();
+      if (!v) return false;
+      if (/\d/.test(v)) return false;
+      if (/x/i.test(v)) return false;
+      return true;
+    };
+
+    const extractCapacity = (val) => {
+      const v = String(val || '').trim();
+      const m = v.match(/\b\d+(?:\.\d+)?\s*(?:KG|Kg|kg|LTR|Ltr|ltr|ML|ml|W|Watt|watt|mm|cm|inch|in)\b/i);
+      return m ? m[0].trim() : '';
+    };
 
     let currentArea = '';
     const parsed = [];
-    for (const row of json) {
-      const arr = headers.map((h) => row[h]);
-      const desc = descIdx >= 0 ? String(arr[descIdx] || '').trim() : '';
-      const qty = qtyIdx >= 0 ? Number(String(arr[qtyIdx] || '').replace(/[^0-9.]/g, '')) || 0 : 0;
-      const price = priceIdx >= 0 ? Number(String(arr[priceIdx] || '').replace(/[^0-9.]/g, '')) || 0 : 0;
+    for (const row of rawRows) {
+      const r = Array.isArray(row) ? row : [];
+      const tag = String(r[0] || '').trim();
+      const name = String(r[1] || '').trim();
+      const colC = String(r[2] || '').trim();
+      const qty = Number(r[3]) || 0;
+      const colE = String(r[4] || '').trim();
+      const colF = String(r[5] || '').trim();
 
-      if (desc && !qty && !price && desc === desc.toUpperCase() && desc.length > 3) {
-        currentArea = desc;
+      if (name && !qty && !colF && name === name.toUpperCase() && name.length > 3) {
+        currentArea = name;
         continue;
       }
+      if (!name) continue;
 
-      const brand = brandIdx >= 0 && brandIdx !== descIdx ? String(arr[brandIdx] || '').trim() : '';
-      const unit = unitIdx >= 0 ? String(arr[unitIdx] || '').trim() : '';
-      const spec = specIdx >= 0 ? String(arr[specIdx] || '').trim() : '';
-      const gst = gstIdx >= 0 ? normalizeGst(arr[gstIdx], '18%') : '18%';
-      const hsn = hsnIdx >= 0 ? String(arr[hsnIdx] || '').trim() : '';
-      const tag = tagIdx >= 0 && tagIdx !== descIdx ? String(arr[tagIdx] || '').trim() : '';
-      let dimension = dimIdx >= 0 && dimIdx !== descIdx ? String(arr[dimIdx] || '').trim() : '';
-      let technical = techIdx >= 0 && techIdx !== descIdx ? String(arr[techIdx] || '').trim() : '';
-      const area = (areaIdx >= 0 && areaIdx !== descIdx ? String(arr[areaIdx] || '').trim() : '') || currentArea;
+      let make = colE;
+      if (!make && isBrandLike(colC)) make = colC;
 
-      if (!dimension && technical) {
-        const capMatch = technical.match(/\b\d+(?:\.\d+)?\s*(?:KG|Kg|kg|LTR|Ltr|ltr|ML|ml|W|Watt|watt|mm|cm|inch|in)\b/i);
-        if (capMatch) dimension = capMatch[0].trim();
+      let dimension = '';
+      if (colC && /x/i.test(colC)) {
+        dimension = colC;
+      } else if (isBrandLike(colC) && colF) {
+        dimension = extractCapacity(colF) || colF;
+      } else if (colC && !isBrandLike(colC)) {
+        dimension = colC;
+      } else if (colF) {
+        dimension = extractCapacity(colF) || colF;
       }
 
-      const fullDesc = spec ? `${desc} (${spec})` : desc;
-      if (!desc) continue;
+      let technical = colF;
+      if (technical && technical === dimension) technical = '';
+
+      const area = currentArea;
+
       parsed.push(
         baseRow({
-          description: fullDesc || desc,
-          brand,
+          description: name,
+          brand: make,
+          make,
           qty: qty || 1,
-          unit,
-          unitPrice: price,
-          gst,
-          hsn,
+          unitPrice: 0,
+          gst: '18%',
+          hsn: '',
           clientTag: tag,
           dimensionOrCapacity: dimension,
           technicalSpec: technical,
@@ -382,6 +377,7 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
     }
     setRows(parsed);
   };
+
 
   const handleTextParse = (text) => {
     const parsed = parseTextLines(text).map((r) =>
@@ -760,7 +756,7 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
                     <input
                       value={r.technicalSpec}
                       onChange={(e) => updateRow(r.id, { technicalSpec: e.target.value })}
-                      placeholder="SS 304 - 18/8 Ni/Cr"
+                      placeholder="Spec / Model"
                       className="mt-1 w-full rounded border border-slate-200 px-2 py-0.5 text-[10px] italic text-slate-500 focus:border-slate-900 focus:outline-none"
                     />
                     {r._level !== 'none' && r._match?.product && (
