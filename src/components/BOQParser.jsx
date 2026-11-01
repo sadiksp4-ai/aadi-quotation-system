@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import * as XLSX from 'xlsx';
+import * as XLSX from 'xlsx/xlsx.mjs';
 import { UploadCloud, Trash2, CheckCircle2, AlertTriangle, Search, X } from 'lucide-react';
 
 function fileToDataUrl(file, maxDim = 600) {
@@ -114,7 +114,7 @@ function parseTextLines(text) {
   return rows;
 }
 
-export default function BOQParser({ catalog, clients, onTransfer, onClose }) {
+export default function BOQParser({ catalog = [], clients = [], onTransfer, onClose }) {
   const [tab, setTab] = useState('excel');
   const [rows, setRows] = useState([]);
   const [selectedClient, setSelectedClient] = useState('');
@@ -506,4 +506,3 @@ export default function BOQParser({ catalog, clients, onTransfer, onClose }) {
     </div>
   );
 }
-PY
