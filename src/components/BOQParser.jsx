@@ -230,6 +230,7 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
   const [selectedClient, setSelectedClient] = useState('');
   const [saveAll, setSaveAll] = useState(false);
   const [bulkGst, setBulkGst] = useState('');
+  const [toast, setToast] = useState('');
   const [showNewClient, setShowNewClient] = useState(false);
   const [newClient, setNewClient] = useState({
     propertyName: '',
@@ -515,6 +516,83 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
     if (level === 'suggested')
       return <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-extrabold text-amber-800">Suggested</span>;
     return <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-extrabold text-slate-700">Custom</span>;
+  };
+
+  const handleNormalize = () => {
+    const knownMakes = Array.from(
+      new Set([
+        ...catalog.map((p) => p.brand).filter(Boolean),
+        'Nilkamal',
+        'Master',
+        'Fabrikated',
+        'Fabricated',
+        'Jaquar',
+        'Sirman',
+        'Hobart',
+        'Aadi',
+      ]),
+    );
+    const spelling = {
+      tabel: 'Table',
+      washining: 'Washing',
+      washng: 'Washing',
+      stell: 'Steel',
+      staimless: 'Stainless',
+    };
+    const capRe = /\b\d+(?:\.\d+)?\s*(?:KG|Kg|kg|LTR|Ltr|ltr|ML|ml|W|Watt|watt|mm|cm|inch|in)\b/i;
+
+    let count = 0;
+    setRows((prev) =>
+      prev.map((r) => {
+        let name = r.description || '';
+        // spelling
+        for (const [a, b] of Object.entries(spelling)) {
+          const re = new RegExp(`\\b${a}\\b`, 'gi');
+          name = name.replace(re, b);
+        }
+        let dimension = r.dimensionOrCapacity || '';
+        let brand = r.brand || '';
+        let technical = r.technicalSpec || '';
+
+        // extract capacity from name if missing
+        if (!dimension) {
+          const m = name.match(capRe);
+          if (m) {
+            dimension = m[0].trim();
+            name = name.replace(capRe, '').replace(/\s{2,}/g, ' ').trim();
+          }
+        }
+        // also from technical if still missing
+        if (!dimension && technical) {
+          const m = technical.match(capRe);
+          if (m) dimension = m[0].trim();
+        }
+
+        // split make from name
+        if (!brand) {
+          for (const mk of knownMakes) {
+            const re = new RegExp(`\\b${mk}\\b`, 'i');
+            if (re.test(name)) {
+              brand = mk;
+              name = name.replace(re, '').replace(/\s{2,}/g, ' ').trim();
+              break;
+            }
+          }
+        }
+
+        // if technical empty but name had spec-like remainder? keep
+        count += 1;
+        return {
+          ...r,
+          description: name,
+          brand,
+          dimensionOrCapacity: dimension,
+          technicalSpec: technical,
+        };
+      }),
+    );
+    setToast(`Cleaned and normalized ${rows.length} item specifications`);
+    setTimeout(() => setToast(''), 2500);
   };
 
   const handleTransfer = () => {
@@ -819,6 +897,12 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
             <option value="gst5">Set Selected GST to 5%</option>
             <option value="remove">Remove Selected</option>
           </select>
+          <button
+            onClick={handleNormalize}
+            className="flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-[12px] font-bold text-indigo-700 hover:bg-indigo-100"
+          >
+            ✨ AI Normalize Specs
+          </button>
           <select
             value={selectedClient}
             onChange={(e) => {
@@ -846,6 +930,12 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
           </button>
         </div>
       </div>
+
+      {toast && (
+        <div className="fixed bottom-5 left-1/2 z-[95] -translate-x-1/2 rounded-full bg-slate-900 px-4 py-2 text-[12px] font-bold text-white shadow-pop">
+          {toast}
+        </div>
+      )}
 
       {showNewClient && (
         <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
