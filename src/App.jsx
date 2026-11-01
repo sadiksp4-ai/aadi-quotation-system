@@ -179,8 +179,83 @@ function formatDateIN(iso) {
   });
 }
 
-function isIntraStateSupply(placeOfSupply) {
+function isIntraStateSupply(placeOfSupply, stateCode) {
+  const sc = String(stateCode || '').trim();
+  if (sc) return sc === '27' || /maharashtra/i.test(sc);
   return /maharashtra|27/i.test(String(placeOfSupply || ''));
+}
+
+// client initials for quotation numbering (e.g. JW, RC)
+function clientInitials(name) {
+  const cleaned = String(name || '')
+    .replace(/^the\s+/i, '')
+    .trim();
+  if (!cleaned) return 'CL';
+  const tokens = cleaned.split(/[\\s\\-\\/]+/).filter(Boolean);
+  if (tokens.length === 1) {
+    return tokens[0].slice(0, 2).toUpperCase();
+  }
+  let out = '';
+  for (const t of tokens) {
+    if (out.length >= 2) break;
+    if (t.length <= 3) out += t.toUpperCase();
+    else out += t[0].toUpperCase();
+  }
+  out = out.replace(/[^A-Z]/g, '').slice(0, 2);
+  if (out.length < 2 && tokens[0].length >= 2) {
+    out = tokens[0].slice(0, 2).toUpperCase();
+  }
+  return out || 'CL';
+}
+
+// Indian-rupee amount in words
+function numberToWordsIN(num) {
+  const n = Number(num) || 0;
+  const rupees = Math.floor(Math.abs(n));
+  const paise = Math.round((Math.abs(n) - rupees) * 100);
+  const ones = [
+    '', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
+    'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen',
+    'Seventeen', 'Eighteen', 'Nineteen',
+  ];
+  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+  const threeDigits = (x) => {
+    if (x === 0) return '';
+    const h = Math.floor(x / 100);
+    const r = x % 100;
+    const parts = [];
+    if (h) parts.push(ones[h] + ' Hundred');
+    if (r) {
+      if (r < 20) parts.push(ones[r]);
+      else {
+        const t = Math.floor(r / 10);
+        const o = r % 10;
+        parts.push(tens[t] + (o ? ' ' + ones[o] : ''));
+      }
+    }
+    return parts.join(' ');
+  };
+  const build = (x) => {
+    if (x === 0) return 'Zero';
+    const crore = Math.floor(x / 10000000);
+    x %= 10000000;
+    const lakh = Math.floor(x / 100000);
+    x %= 100000;
+    const thousand = Math.floor(x / 1000);
+    x %= 1000;
+    const hundred = x;
+    const parts = [];
+    if (crore) parts.push(threeDigits(crore) + ' Crore');
+    if (lakh) parts.push(threeDigits(lakh) + ' Lakh');
+    if (thousand) parts.push(threeDigits(thousand) + ' Thousand');
+    if (hundred) parts.push(threeDigits(hundred));
+    return parts.join(' ').trim();
+  };
+  let result = build(rupees) + ' Rupees';
+  if (paise > 0) result += ' and ' + build(paise) + ' Paise';
+  result += ' Only';
+  if (n < 0) result = 'Minus ' + result;
+  return result;
 }
 
 // margin / discount presets applied quote-wide on basic rates (before GST)
@@ -236,20 +311,23 @@ function loadArchive() {
 }
 
 const DEFAULT_DETAILS = {
-  clientName: 'EON HINJEWADI INFRASTRUCTURE PVT. LTD.',
-  hotelName: 'COURTYARD BY MARRIOTT PUNE, HINJEWADI',
+  clientName: '',
+  hotelName: '',
   address: '',
+  shippingAddress: '',
   clientGstin: '',
   clientPan: '',
+  stateCode: '27',
   contactPerson: '',
+  designation: '',
   contactPhone: '',
   contactEmail: '',
   quoteNo: 'AE/QTN/2026-001',
   quoteDate: todayISO(),
-  delivery: '7 to 10 Working Days from PO',
+  delivery: 'Ready Stock / 7-10 Working days',
   payment: '100% Advance along with PO',
   placeOfSupply: 'Maharashtra (27)',
-  validity: '15 Days',
+  validity: '15 days from quotation date',
   freight: 0,
   marginPct: 0,
 };
@@ -999,7 +1077,7 @@ function DetailField({ label, children }) {
 const detailInputCls =
   'w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] font-medium text-slate-800 focus:border-slate-900 focus:outline-none';
 
-function QuoteDetailsForm({ details, setDetail, open, onToggle, onReset }) {
+function QuoteDetailsForm({ details, setDetail, open, onToggle, onReset, archive = [] }) {
   return (
     <div className="border-b border-slate-200 bg-slate-50">
       <button
@@ -1027,25 +1105,42 @@ function QuoteDetailsForm({ details, setDetail, open, onToggle, onReset }) {
               setDetail('clientName', c.legalEntity || c.accountName || '');
               setDetail('hotelName', c.propertyName || '');
               setDetail('address', c.address || '');
-              setDetail(
-                'contactPerson',
-                c.contactPerson
-                  ? `${c.contactPerson}${c.designation ? ` (${c.designation})` : ''}`
-                  : '',
-              );
+              setDetail('shippingAddress', c.address || '');
+              setDetail('contactPerson', c.contactPerson || '');
+              setDetail('designation', c.designation || '');
               setDetail('contactPhone', c.phone || '');
               setDetail('contactEmail', c.email || '');
               setDetail('placeOfSupply', c.placeOfSupply || details.placeOfSupply);
+              const scMatch = String(c.placeOfSupply || '').match(/\\((\\d+)\\)/);
+              setDetail('stateCode', scMatch ? scMatch[1] : details.stateCode || '27');
+              setDetail('clientGstin', c.gstin || details.clientGstin || '');
+              setDetail('quoteNo', (() => {
+                const initials = clientInitials(c.propertyName || c.legalEntity || c.accountName || '');
+                const year = new Date().getFullYear();
+                const prefix = `AE/${initials}/${year}-`;
+                let max = 0;
+                for (const q of archive) {
+                  const qn = String(q.quoteNo || '');
+                  if (qn.startsWith(prefix)) {
+                    const m = qn.match(/-(\\d+)\\s*$/);
+                    if (m) max = Math.max(max, Number(m[1]));
+                  }
+                }
+                return `${prefix}${String(max + 1).padStart(3, '0')}`;
+              })());
             }}
             onClear={() => {
               setDetail('clientName', '');
               setDetail('hotelName', '');
               setDetail('address', '');
+              setDetail('shippingAddress', '');
               setDetail('contactPerson', '');
+              setDetail('designation', '');
               setDetail('contactPhone', '');
               setDetail('contactEmail', '');
               setDetail('clientGstin', '');
               setDetail('clientPan', '');
+              setDetail('stateCode', '27');
             }}
           />
 
@@ -1069,11 +1164,20 @@ function QuoteDetailsForm({ details, setDetail, open, onToggle, onReset }) {
               className={detailInputCls}
             />
           </DetailField>
-          <DetailField label="Billing & Shipping Address">
+          <DetailField label="Billing Address">
             <textarea
               value={details.address}
               onChange={(e) => setDetail('address', e.target.value)}
               placeholder="Plot / Street, Area, City - PIN"
+              rows={2}
+              className={`${detailInputCls} resize-y`}
+            />
+          </DetailField>
+          <DetailField label="Shipping / Property Delivery Address">
+            <textarea
+              value={details.shippingAddress}
+              onChange={(e) => setDetail('shippingAddress', e.target.value)}
+              placeholder="Property delivery address"
               rows={2}
               className={`${detailInputCls} resize-y`}
             />
@@ -1087,6 +1191,16 @@ function QuoteDetailsForm({ details, setDetail, open, onToggle, onReset }) {
                 className={`${detailInputCls} font-mono`}
               />
             </DetailField>
+            <DetailField label="State Code">
+              <input
+                value={details.stateCode}
+                onChange={(e) => setDetail('stateCode', e.target.value.replace(/[^0-9]/g, ''))}
+                placeholder="27"
+                className={`${detailInputCls} font-mono`}
+              />
+            </DetailField>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
             <DetailField label="PAN">
               <input
                 value={details.clientPan}
@@ -1095,17 +1209,25 @@ function QuoteDetailsForm({ details, setDetail, open, onToggle, onReset }) {
                 className={`${detailInputCls} font-mono`}
               />
             </DetailField>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <DetailField label="Contact Person">
+            <DetailField label="Attention Contact Person">
               <input
                 value={details.contactPerson}
                 onChange={(e) => setDetail('contactPerson', e.target.value)}
-                placeholder="Name / Designation"
+                placeholder="Name"
                 className={detailInputCls}
               />
             </DetailField>
-            <DetailField label="Email">
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <DetailField label="Designation">
+              <input
+                value={details.designation}
+                onChange={(e) => setDetail('designation', e.target.value)}
+                placeholder="CLUSTER PURCHASE MANAGER"
+                className={detailInputCls}
+              />
+            </DetailField>
+            <DetailField label="Attention Email">
               <input
                 type="email"
                 value={details.contactEmail}
@@ -1180,7 +1302,7 @@ function QuoteDetailsForm({ details, setDetail, open, onToggle, onReset }) {
               />
             </DetailField>
           </div>
-          <DetailField label="Freight / Transport Charges (₹)">
+          <DetailField label="Freight / Transport Charges (₹) (0 = Included)">
             <input
               type="number"
               min={0}
@@ -1208,6 +1330,10 @@ function QuoteDetailsForm({ details, setDetail, open, onToggle, onReset }) {
 
 function ProductCard({ product, qty, onAdd, onInc, onDec, onEdit, onDelete }) {
   const [copied, setCopied] = useState(false);
+  const [inputQty, setInputQty] = useState(qty > 0 ? qty : 1);
+  useEffect(() => {
+    if (qty > 0) setInputQty(qty);
+  }, [qty]);
   const discount =
     product.mrp > product.sellingPrice
       ? Math.round((1 - product.sellingPrice / product.mrp) * 100)
@@ -1316,12 +1442,24 @@ function ProductCard({ product, qty, onAdd, onInc, onDec, onEdit, onDelete }) {
 
           {/* add / counter */}
           {qty === 0 ? (
-            <button
-              onClick={onAdd}
-              className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[13px] font-bold text-white transition hover:bg-slate-700 active:scale-[.98]"
-            >
-              <ShoppingCart size={15} /> Add to Quote
-            </button>
+            <div className="mt-2 flex items-center gap-2">
+              <input
+                type="number"
+                min={1}
+                value={inputQty}
+                onChange={(e) =>
+                  setInputQty(Math.max(1, Number(e.target.value) || 1))
+                }
+                className="w-16 rounded-lg border border-slate-200 bg-white px-2 py-2 text-center text-[13px] font-bold tabular-nums focus:border-slate-900 focus:outline-none"
+                aria-label="Quantity to add"
+              />
+              <button
+                onClick={() => onAdd(Math.max(1, Number(inputQty) || 1))}
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[13px] font-bold text-white transition hover:bg-slate-700 active:scale-[.98]"
+              >
+                <ShoppingCart size={15} /> Add to Quote
+              </button>
+            </div>
           ) : (
             <div className="mt-2 flex w-full items-center justify-between rounded-lg border-2 border-slate-900 bg-slate-50 px-1 py-1">
               <button
@@ -1634,9 +1772,12 @@ export default function App() {
     'clientName',
     'hotelName',
     'address',
+    'shippingAddress',
     'clientGstin',
     'clientPan',
+    'stateCode',
     'contactPerson',
+    'designation',
     'contactPhone',
     'contactEmail',
     'quoteNo',
@@ -1664,9 +1805,12 @@ export default function App() {
       clientName: details.clientName,
       hotelName: details.hotelName,
       address: details.address,
+      shippingAddress: details.shippingAddress,
       clientGstin: details.clientGstin,
       clientPan: details.clientPan,
+      stateCode: details.stateCode,
       contactPerson: details.contactPerson,
+      designation: details.designation,
       contactEmail: details.contactEmail,
       quoteDate: details.quoteDate,
       delivery: details.delivery,
@@ -1868,13 +2012,14 @@ export default function App() {
   const filtered = useMemo(() => {
     let out = catalog;
     if (search) {
-      out = out.filter(
-        (p) =>
-          p.name.toLowerCase().includes(search) ||
-          p.sku.toLowerCase().includes(search) ||
-          p.category.toLowerCase().includes(search) ||
-          p.brand.toLowerCase().includes(search),
-      );
+      const tokens = search.split(/\\s+/).filter(Boolean);
+      out = out.filter((p) => {
+        const hay = [p.name, p.brand, p.sku, p.category, p.subcategory, p.hsn]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        return tokens.every((t) => hay.includes(t));
+      });
     }
     if (brands.length)
       out = out.filter((p) => brands.includes(p.brand));
@@ -1919,7 +2064,7 @@ export default function App() {
   );
   const freight = lineItems.length > 0 ? Number(details.freight) || 0 : 0;
   const grandTotal = subtotal + gstTotal + freight;
-  const intraState = isIntraStateSupply(details.placeOfSupply);
+  const intraState = isIntraStateSupply(details.placeOfSupply, details.stateCode);
   const cgst = intraState ? gstTotal / 2 : 0;
   const sgst = intraState ? gstTotal / 2 : 0;
   const igst = intraState ? 0 : gstTotal;
@@ -2466,8 +2611,8 @@ export default function App() {
                     key={p.sku}
                     product={p}
                     qty={cart[p.sku] || 0}
-                    onAdd={() => {
-                      setQty(p.sku, 1);
+                    onAdd={(q) => {
+                      setQty(p.sku, Math.max(1, Number(q) || 1));
                       showToast(`${p.sku} added to quote`);
                     }}
                     onInc={() => setQty(p.sku, (cart[p.sku] || 0) + 1)}
@@ -2532,6 +2677,7 @@ export default function App() {
                   setDetails({ ...DEFAULT_DETAILS });
                   showToast('Details reset to defaults');
                 }}
+                archive={archive}
               />
 
               {lineItems.length === 0 ? (
@@ -3032,6 +3178,7 @@ export default function App() {
                     ['Delivery Timeline', details.delivery],
                     ['Payment Terms', details.payment],
                     ['Validity', details.validity],
+                    ['Freight', details.freight > 0 ? inr2.format(details.freight) : 'Included'],
                     ['Place of Supply', details.placeOfSupply],
                   ].map(([k, v]) => (
                     <tr key={k}>
@@ -3052,16 +3199,26 @@ export default function App() {
               <div style={{ fontSize: 11, fontWeight: 700, color: '#334155' }}>{details.hotelName}</div>
             )}
             {details.address && (
-              <div style={{ fontSize: 10.5, color: '#334155', marginTop: 2, whiteSpace: 'pre-line' }}>{details.address}</div>
+              <div style={{ fontSize: 10.5, color: '#334155', marginTop: 2, whiteSpace: 'pre-line' }}>
+                <strong>Billing:</strong> {details.address}
+              </div>
+            )}
+            {details.shippingAddress && details.shippingAddress !== details.address && (
+              <div style={{ fontSize: 10.5, color: '#334155', marginTop: 2, whiteSpace: 'pre-line' }}>
+                <strong>Shipping:</strong> {details.shippingAddress}
+              </div>
             )}
             <div style={{ fontSize: 10.5, marginTop: 4, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
               {details.clientGstin && <span>GSTIN: <strong>{details.clientGstin}</strong></span>}
-              {details.clientGstin && details.clientPan && <span> | </span>}
-              {details.clientPan && <span>PAN: <strong>{details.clientPan}</strong></span>}
+              {details.stateCode && <span> | State Code: <strong>{details.stateCode}</strong></span>}
+              {details.clientPan && <span> | PAN: <strong>{details.clientPan}</strong></span>}
             </div>
-            {(details.contactPerson || details.contactEmail) && (
+            {(details.contactPerson || details.designation || details.contactEmail) && (
               <div style={{ fontSize: 10.5, color: '#334155' }}>
-                Contact: {details.contactPerson}{details.contactPerson && details.contactEmail ? ' | ' : ''}{details.contactEmail}
+                Attention: {details.contactPerson}
+                {details.designation ? ` (${details.designation})` : ''}
+                {details.contactEmail ? ` | ${details.contactEmail}` : ''}
+                {details.contactPhone ? ` | ${details.contactPhone}` : ''}
               </div>
             )}
           </div>
@@ -3070,7 +3227,7 @@ export default function App() {
           <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 10, fontSize: 9.5 }}>
             <thead>
               <tr style={{ background: '#0f172a', color: '#fff' }}>
-                {['Sr.', 'Item Description', 'Make / Brand & SKU', 'Image', 'UoM', 'Basic Rate (₹)', 'GST Amt (₹)', 'Incl. Rate (₹)', 'Qty', 'Total Amount (₹)'].map((h) => (
+                {['Sr.', 'Item Description', 'Make / Brand & SKU', 'Image', 'List Price (MRP)', 'Disc %', 'Best Unit Price (₹)', 'Qty', 'Total (₹)'].map((h) => (
                   <th key={h} style={{ padding: '6px 4px', border: '1px solid #0f172a', fontSize: 9 }}>{h}</th>
                 ))}
               </tr>
@@ -3100,7 +3257,7 @@ export default function App() {
               ))}
               {printRows.length === 0 && (
                 <tr>
-                  <td colSpan={10} style={{ border: '1px solid #94a3b8', padding: 12, textAlign: 'center' }}>
+                  <td colSpan={9} style={{ border: '1px solid #94a3b8', padding: 12, textAlign: 'center' }}>
                     No items in quotation.
                   </td>
                 </tr>
@@ -3146,7 +3303,10 @@ export default function App() {
               </tbody>
             </table>
           </div>
-          <p style={{ fontSize: 10, color: '#475569', marginTop: 6 }}>
+          <p style={{ fontSize: 10.5, color: '#111827', marginTop: 6, fontWeight: 700 }}>
+             Grand Total (in words): {numberToWordsIN(grandTotal)}
+           </p>
+           <p style={{ fontSize: 10, color: '#475569', marginTop: 4 }}>
             {itemCount} item(s) across {lineItems.length} line(s) · GST applied per item HSN slab ·
             Place of Supply: {details.placeOfSupply || '—'} ({intraState ? 'CGST + SGST' : 'IGST'})
             {marginPct !== 0 && ` · Basic rates include ${marginLabel(marginPct)} margin/discount on list price`}.
