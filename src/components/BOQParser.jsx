@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx/xlsx.mjs';
 import { UploadCloud, Trash2, CheckCircle2, AlertTriangle, Search, X, Plus } from 'lucide-react';
 
@@ -113,11 +113,29 @@ function parseTextLines(text) {
   return rows;
 }
 
+const baseRow = (extra = {}) => ({
+  id: Math.random().toString(36).slice(2),
+  description: '',
+  brand: '',
+  qty: 1,
+  unit: 'Nos',
+  unitPrice: 0,
+  gst: '18%',
+  hsn: '',
+  image: '',
+  sku: '',
+  include: true,
+  saveToCatalog: false,
+  searchQuery: '',
+  searchOpen: false,
+  manualMatch: false,
+  ...extra,
+});
+
 export default function BOQParser({ catalog = [], clients = [], onTransfer, onClose, onAddClient }) {
   const [tab, setTab] = useState('excel');
   const [rows, setRows] = useState([]);
   const [selectedClient, setSelectedClient] = useState('');
-  const [search, setSearch] = useState('');
   const [saveAll, setSaveAll] = useState(false);
   const [bulkGst, setBulkGst] = useState('');
   const [showNewClient, setShowNewClient] = useState(false);
@@ -133,6 +151,30 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
     email: '',
   });
 
+  useEffect(() => {
+    const close = (e) => {
+      const wraps = document.querySelectorAll('.boq-search-wrap');
+      let inside = false;
+      wraps.forEach((w) => {
+        if (w.contains(e.target)) inside = true;
+      });
+      if (!inside) {
+        setRows((prev) => prev.map((r) => (r.searchOpen ? { ...r, searchOpen: false } : r)));
+      }
+    };
+    const esc = (e) => {
+      if (e.key === 'Escape') {
+        setRows((prev) => prev.map((r) => (r.searchOpen ? { ...r, searchOpen: false } : r)));
+      }
+    };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', esc);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', esc);
+    };
+  }, []);
+
   const matchedRows = useMemo(
     () =>
       rows.map((r) => {
@@ -140,12 +182,16 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
         const product = m?.product || null;
         const level = m?.level || 'none';
         const defaultSave = level !== 'high';
+        let finalLevel = level;
+        if (r.manualMatch || (r.sku && catalog.some((p) => p.sku === r.sku))) {
+          finalLevel = 'high';
+        }
         return {
           ...r,
           _match: m,
-          _level: level,
+          _level: finalLevel,
           sku: r.sku || (product && level !== 'none' ? product.sku : ''),
-          brand: r.brand || (product ? product.brand : (r.brand || '')),
+          brand: r.brand || (product ? product.brand : ''),
           hsn: r.hsn || (product ? product.hsn : ''),
           unitPrice: r.unitPrice || (product ? Number(product.sellingPrice) || 0 : 0),
           gst: r.gst || (product ? product.gst : '18%'),
@@ -155,16 +201,6 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
       }),
     [rows, catalog, saveAll],
   );
-
-  const filteredCatalog = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return catalog.slice(0, 80);
-    return catalog
-      .filter((p) =>
-        [p.name, p.brand, p.sku, p.hsn].filter(Boolean).join(' ').toLowerCase().includes(q),
-      )
-      .slice(0, 80);
-  }, [catalog, search]);
 
   const handleFile = async (file) => {
     if (!file) return;
@@ -193,8 +229,7 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
       const gst = gi >= 0 ? normalizeGst(arr[gi], '18%') : '18%';
       const hsn = hi >= 0 ? String(arr[hi] || '').trim() : '';
       const fullDesc = spec ? `${desc} (${spec})` : desc;
-      return {
-        id: Math.random().toString(36).slice(2),
+      return baseRow({
         description: fullDesc || desc,
         brand,
         qty: qty || 1,
@@ -202,30 +237,23 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
         unitPrice: price,
         gst,
         hsn,
-        image: '',
-        sku: '',
-        include: true,
-        saveToCatalog: false,
-      };
+      });
     }).filter((r) => r.description);
     setRows(parsed);
   };
 
   const handleTextParse = (text) => {
-    const parsed = parseTextLines(text).map((r) => ({
-      id: Math.random().toString(36).slice(2),
-      description: r.description,
-      brand: r.brand || '',
-      qty: r.qty || 1,
-      unit: r.unit || '',
-      unitPrice: r.unitPrice || 0,
-      gst: r.gst || '18%',
-      hsn: r.hsn || '',
-      image: r.image || '',
-      sku: '',
-      include: true,
-      saveToCatalog: false,
-    }));
+    const parsed = parseTextLines(text).map((r) =>
+      baseRow({
+        description: r.description,
+        brand: r.brand || '',
+        qty: r.qty || 1,
+        unit: r.unit || '',
+        unitPrice: r.unitPrice || 0,
+        gst: r.gst || '18%',
+        hsn: r.hsn || '',
+      }),
+    );
     setRows(parsed);
   };
 
@@ -237,20 +265,7 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
   const addCustomLine = () =>
     setRows((prev) => [
       ...prev,
-      {
-        id: Math.random().toString(36).slice(2),
-        description: '',
-        brand: 'Aadi',
-        qty: 1,
-        unit: 'Nos',
-        unitPrice: 0,
-        gst: '18%',
-        hsn: '',
-        image: '',
-        sku: '',
-        include: true,
-        saveToCatalog: true,
-      },
+      baseRow({ brand: 'Aadi', saveToCatalog: true }),
     ]);
 
   const handleImageUpload = async (id, file) => {
@@ -282,6 +297,33 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
     setBulkGst('');
   };
 
+  const selectProduct = (rowId, product) => {
+    updateRow(rowId, {
+      sku: product.sku,
+      description: product.name,
+      brand: product.brand,
+      hsn: product.hsn || '',
+      unitPrice: Number(product.sellingPrice) || 0,
+      gst: product.gst || '18%',
+      image: product.image || '',
+      searchQuery: '',
+      searchOpen: false,
+      manualMatch: true,
+    });
+  };
+
+  const catalogSearchResults = (query) => {
+    const q = String(query || '').trim().toLowerCase();
+    if (!q) return [];
+    const tokens = q.split(/\s+/).filter(Boolean);
+    return catalog
+      .filter((p) => {
+        const hay = [p.name, p.brand, p.sku].filter(Boolean).join(' ').toLowerCase();
+        return tokens.every((t) => hay.includes(t));
+      })
+      .slice(0, 25);
+  };
+
   const handleCreateClient = async () => {
     if (!newClient.propertyName.trim()) return;
     const client = {
@@ -299,6 +341,7 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
       placeOfSupply: newClient.stateCode === '27' ? 'Maharashtra (27)' : `State (${newClient.stateCode})`,
       gstin: newClient.gstin || '',
       shippingAddress: newClient.shippingAddress || newClient.address || '',
+      stateCode: newClient.stateCode || '27',
     };
     if (onAddClient) {
       const id = await onAddClient(client);
@@ -490,6 +533,51 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
                     />
                   </td>
                   <td className="px-2 py-2">
+                    <div className="relative boq-search-wrap">
+                      <input
+                        value={r.searchQuery || ''}
+                        onChange={(e) => updateRow(r.id, { searchQuery: e.target.value, searchOpen: true })}
+                        placeholder="Search catalog..."
+                        className="w-full rounded border border-slate-200 px-2 py-1 text-[10px] focus:border-slate-900 focus:outline-none"
+                      />
+                      {r.searchOpen && (r.searchQuery || '').trim() && (
+                        <div className="absolute left-0 top-full z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-xl">
+                          {catalogSearchResults(r.searchQuery).length === 0 && (
+                            <div className="px-3 py-2 text-[11px] text-slate-400">No matches</div>
+                          )}
+                          {catalogSearchResults(r.searchQuery).map((p) => (
+                            <button
+                              key={p.sku}
+                              type="button"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                selectProduct(r.id, p);
+                              }}
+                              className="flex w-full items-center gap-2 border-b border-slate-100 px-2 py-1.5 text-left hover:bg-slate-50"
+                            >
+                              {p.image ? (
+                                <img src={p.image} alt="" className="h-8 w-8 rounded border border-slate-200 object-contain bg-white" />
+                              ) : (
+                                <div className="flex h-8 w-8 items-center justify-center rounded border border-slate-200 text-[8px] text-slate-400">
+                                  N/A
+                                </div>
+                              )}
+                              <div className="min-w-0 flex-1">
+                                <div className="truncate text-[11px] font-bold text-slate-800">{p.name}</div>
+                                <div className="flex items-center gap-1 text-[10px] text-slate-500">
+                                  <span className="rounded bg-slate-100 px-1 font-bold">{p.brand}</span>
+                                  <span className="font-mono">{p.sku}</span>
+                                </div>
+                              </div>
+                              <div className="text-right text-[10px] font-bold text-slate-700">
+                                <div>₹{Number(p.sellingPrice || 0).toLocaleString('en-IN')}</div>
+                                <div className="text-slate-400">{p.gst}</div>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                     <select
                       value={r.sku}
                       onChange={(e) => {
@@ -501,12 +589,13 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
                           unitPrice: p ? Number(p.sellingPrice) || r.unitPrice : r.unitPrice,
                           gst: p?.gst || r.gst,
                           image: p?.image || r.image,
+                          manualMatch: !!p,
                         });
                       }}
-                      className="w-full rounded border border-slate-200 px-2 py-1 text-[11px] font-mono focus:border-slate-900 focus:outline-none"
+                      className="mt-1 w-full rounded border border-slate-200 px-2 py-1 text-[11px] font-mono focus:border-slate-900 focus:outline-none"
                     >
                       <option value="">Custom (no SKU)</option>
-                      {filteredCatalog.map((p) => (
+                      {catalog.map((p) => (
                         <option key={p.sku} value={p.sku}>
                           {p.sku} — {p.name}
                         </option>
@@ -517,12 +606,6 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
                       onChange={(e) => updateRow(r.id, { hsn: e.target.value })}
                       placeholder="HSN"
                       className="mt-1 w-full rounded border border-slate-200 px-2 py-1 text-[11px] font-mono focus:border-slate-900 focus:outline-none"
-                    />
-                    <input
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      placeholder="Search catalog..."
-                      className="mt-1 w-full rounded border border-slate-200 px-2 py-1 text-[10px] focus:border-slate-900 focus:outline-none"
                     />
                   </td>
                   <td className="px-2 py-2">
