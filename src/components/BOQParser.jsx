@@ -34,6 +34,10 @@ const COL_KEYS = {
   price: ['unit cost', 'unit price', 'rate', 'price', 'basic price', 'cost', 'mrp'],
   gst: ['gst', 'gst %', 'gst slab', 'gst rate', 'tax'],
   hsn: ['hsn', 'hsn code'],
+  tag: ['tag', 'item code', 'sr no', 'sr. no', 'ref', 'sl no', 's.no', 'item no', 'code'],
+  dimension: ['dimension', 'size', 'capacity', 'dims', 'measurements'],
+  technical: ['description', 'material', 'remark', 'material spec', 'notes', 'remarks'],
+  area: ['location', 'area', 'zone', 'section', 'department', 'station'],
 };
 
 function pickCol(headers, keys) {
@@ -129,6 +133,10 @@ const baseRow = (extra = {}) => ({
   searchQuery: '',
   searchOpen: false,
   manualMatch: false,
+  dimensionOrCapacity: '',
+  technicalSpec: '',
+  clientTag: '',
+  areaCategory: '',
   ...extra,
 });
 
@@ -267,7 +275,7 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
   const matchedRows = useMemo(
     () =>
       rows.map((r) => {
-        const m = r.matchedProduct || bestMatch(r.description, catalog);
+        const m = r.matchedProduct || bestMatch(`${r.description} ${r.dimensionOrCapacity}`.trim(), catalog);
         const product = m?.product || null;
         const level = m?.level || 'none';
         const defaultSave = level !== 'high';
@@ -307,6 +315,15 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
     const pi = pickCol(headers, COL_KEYS.price);
     const gi = pickCol(headers, COL_KEYS.gst);
     const hi = pickCol(headers, COL_KEYS.hsn);
+    const ti = pickCol(headers, COL_KEYS.tag);
+    const dimi = pickCol(headers, COL_KEYS.dimension);
+    const techi = pickCol(headers, COL_KEYS.technical);
+    const areai = pickCol(headers, COL_KEYS.area);
+    const tagIdx = ti >= 0 ? ti : 0;
+    const dimIdx = dimi >= 0 ? dimi : (headers.length > 2 ? 2 : -1);
+    const techIdx = techi >= 0 ? techi : (headers.length > 5 ? 5 : -1);
+    const areaIdx = areai >= 0 ? areai : -1;
+
     const parsed = json.map((row) => {
       const arr = headers.map((h) => row[h]);
       const desc = di >= 0 ? String(arr[di] || '').trim() : '';
@@ -317,6 +334,10 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
       const price = pi >= 0 ? Number(String(arr[pi]).replace(/[^0-9.]/g, '')) || 0 : 0;
       const gst = gi >= 0 ? normalizeGst(arr[gi], '18%') : '18%';
       const hsn = hi >= 0 ? String(arr[hi] || '').trim() : '';
+      const tag = tagIdx >= 0 && tagIdx !== di ? String(arr[tagIdx] || '').trim() : '';
+      const dimension = dimIdx >= 0 && dimIdx !== di ? String(arr[dimIdx] || '').trim() : '';
+      const technical = techIdx >= 0 && techIdx !== di ? String(arr[techIdx] || '').trim() : '';
+      const area = areaIdx >= 0 && areaIdx !== di ? String(arr[areaIdx] || '').trim() : '';
       const fullDesc = spec ? `${desc} (${spec})` : desc;
       return baseRow({
         description: fullDesc || desc,
@@ -326,6 +347,10 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
         unitPrice: price,
         gst,
         hsn,
+        clientTag: tag,
+        dimensionOrCapacity: dimension,
+        technicalSpec: technical,
+        areaCategory: area,
       });
     }).filter((r) => r.description);
     setRows(parsed);
@@ -602,10 +627,37 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
                   </td>
                   <td className="px-2 py-2">{levelBadge(r._level)}</td>
                   <td className="px-2 py-2">
+                    <div className="flex flex-wrap items-center gap-1 mb-1">
+                      {r.clientTag && (
+                        <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[9px] font-extrabold text-blue-800">
+                          Ref: {r.clientTag}
+                        </span>
+                      )}
+                      {r.areaCategory && (
+                        <span className="rounded bg-purple-100 px-1.5 py-0.5 text-[9px] font-extrabold text-purple-800">
+                          {r.areaCategory}
+                        </span>
+                      )}
+                    </div>
                     <input
                       value={r.description}
                       onChange={(e) => updateRow(r.id, { description: e.target.value })}
                       className="w-full rounded border border-slate-200 px-2 py-1 text-[12px] font-medium focus:border-slate-900 focus:outline-none"
+                    />
+                    <div className="mt-1 flex items-center gap-1">
+                      <span className="text-[10px] text-slate-400">📏</span>
+                      <input
+                        value={r.dimensionOrCapacity}
+                        onChange={(e) => updateRow(r.id, { dimensionOrCapacity: e.target.value })}
+                        placeholder="120 LTR / 1150x750x850"
+                        className="flex-1 rounded border border-slate-200 px-2 py-0.5 text-[10px] font-medium focus:border-slate-900 focus:outline-none"
+                      />
+                    </div>
+                    <input
+                      value={r.technicalSpec}
+                      onChange={(e) => updateRow(r.id, { technicalSpec: e.target.value })}
+                      placeholder="SS 304 - 18/8 Ni/Cr"
+                      className="mt-1 w-full rounded border border-slate-200 px-2 py-0.5 text-[10px] italic text-slate-500 focus:border-slate-900 focus:outline-none"
                     />
                     {r._level !== 'none' && r._match?.product && (
                       <p className="mt-0.5 text-[10px] text-slate-400">

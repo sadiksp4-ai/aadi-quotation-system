@@ -1630,6 +1630,7 @@ export default function App() {
   const [cats, setCats] = useState([]);
   const [sort, setSort] = useState('relevance');
   const [customProducts, setCustomProducts] = useState(loadCustomProducts);
+  const [itemSpecs, setItemSpecs] = useState({});
   const [clients, setClients] = useState(BASE_CLIENTS);
   const [productOverrides, setProductOverrides] = useState({});
   const [addModalOpen, setAddModalOpen] = useState(false);
@@ -1881,10 +1882,20 @@ export default function App() {
     }
     setDetails(newDetails);
     const newCart = {};
+    const newSpecs = {};
     for (const item of q.items || []) {
-      if (item?.sku) newCart[item.sku] = item.qty || 1;
+      if (item?.sku) {
+        newCart[item.sku] = item.qty || 1;
+        newSpecs[item.sku] = {
+          dimensionOrCapacity: item.dimensionOrCapacity || '',
+          technicalSpec: item.technicalSpec || '',
+          clientTag: item.clientTag || '',
+          areaCategory: item.areaCategory || '',
+        };
+      }
     }
     setCart(newCart);
+    setItemSpecs(newSpecs);
     setCurrentQuoteId(q.id);
     setCurrentIsInvoice(!!q.isInvoice);
     setDrawerOpen(false);
@@ -1956,59 +1967,77 @@ export default function App() {
 
   const handleBOQTransfer = (rows, selectedClient) => {
     const included = (rows || []).filter((r) => r.include);
+    const skuMap = [];
     const newCustom = [];
     const toSave = [];
+    included.forEach((r, idx) => {
+      let sku = r.sku;
+      const exists = catalog.some((p) => p.sku === sku);
+      if (!sku || !exists) {
+        sku = r.sku || `AE-CUST-${Date.now().toString().slice(-6)}-${idx}`;
+        newCustom.push({
+          brand: r.brand || 'Aadi',
+          sku,
+          name: r.description || 'BOQ Item',
+          category: 'Custom Kitchen / Commercial',
+          subcategory: '',
+          hsn: r.hsn || '',
+          gst: r.gst || '18%',
+          mrp: Number(r.unitPrice) || 0,
+          sellingPrice: Number(r.unitPrice) || 0,
+          image: r.image || '',
+          custom: true,
+          createdAt: new Date().toISOString(),
+        });
+      }
+      if (r.saveToCatalog) {
+        toSave.push({
+          brand: r.brand || 'Aadi',
+          sku,
+          name: r.description || 'BOQ Item',
+          category: 'Custom Kitchen / Commercial',
+          subcategory: '',
+          hsn: r.hsn || '',
+          gst: r.gst || '18%',
+          mrp: Number(r.unitPrice) || 0,
+          sellingPrice: Number(r.unitPrice) || 0,
+          image: r.image || '',
+          custom: true,
+        });
+      }
+      skuMap.push({ r, sku });
+    });
+
     setCart((prevCart) => {
       const next = { ...prevCart };
-      included.forEach((r, idx) => {
-        let sku = r.sku;
-        const exists = catalog.some((p) => p.sku === sku);
-        if (!sku || !exists) {
-          sku = r.sku || `AE-CUST-${Date.now().toString().slice(-6)}-${idx}`;
-          newCustom.push({
-            brand: r.brand || 'Aadi',
-            sku,
-            name: r.description || 'BOQ Item',
-            category: 'Custom Kitchen / Commercial',
-            subcategory: '',
-            hsn: r.hsn || '',
-            gst: r.gst || '18%',
-            mrp: Number(r.unitPrice) || 0,
-            sellingPrice: Number(r.unitPrice) || 0,
-            image: r.image || '',
-            custom: true,
-            createdAt: new Date().toISOString(),
-          });
-        }
-        if (r.saveToCatalog) {
-          const prod = {
-            brand: r.brand || 'Aadi',
-            sku,
-            name: r.description || 'BOQ Item',
-            category: 'Custom Kitchen / Commercial',
-            subcategory: '',
-            hsn: r.hsn || '',
-            gst: r.gst || '18%',
-            mrp: Number(r.unitPrice) || 0,
-            sellingPrice: Number(r.unitPrice) || 0,
-            image: r.image || '',
-            custom: true,
-          };
-          toSave.push(prod);
-        }
+      skuMap.forEach(({ r, sku }) => {
         next[sku] = (next[sku] || 0) + (Number(r.qty) || 1);
       });
       return next;
     });
+
+    setItemSpecs((prev) => {
+      const next = { ...prev };
+      skuMap.forEach(({ r, sku }) => {
+        next[sku] = {
+          dimensionOrCapacity: r.dimensionOrCapacity || '',
+          technicalSpec: r.technicalSpec || '',
+          clientTag: r.clientTag || '',
+          areaCategory: r.areaCategory || '',
+        };
+      });
+      return next;
+    });
+
     if (newCustom.length) {
       setCustomProducts((prev) => [...newCustom, ...prev]);
     }
-    // persist saved items to Firestore product_overrides
     toSave.forEach((prod) => {
       setDoc(doc(db, 'product_overrides', prod.sku), prod).catch((err) =>
         console.error('save boq product error', err),
       );
     });
+
     if (selectedClient) {
       const c = clients.find((x) => String(x.id) === String(selectedClient));
       if (c) {
@@ -2149,9 +2178,14 @@ export default function App() {
   const lineItems = useMemo(
     () =>
       Object.entries(cart)
-        .map(([sku, qty]) => ({ ...productBySku[sku], qty }))
-        .filter((i) => i.qty > 0 && i.sku),
-    [cart, productBySku],
+        .map(([sku, qty]) => {
+          const base = productBySku[sku];
+          if (!base) return null;
+          const specs = itemSpecs[sku] || {};
+          return { ...base, ...specs, qty };
+        })
+        .filter((i) => i && i.qty > 0 && i.sku),
+    [cart, productBySku, itemSpecs],
   );
 
   useEffect(() => {
@@ -2853,6 +2887,7 @@ export default function App() {
                   <button
                     onClick={() => {
                       setCart({});
+                      setItemSpecs({});
                       setCurrentQuoteId(null);
                       setCurrentIsInvoice(false);
                       showToast('Quote cleared');
@@ -3348,6 +3383,18 @@ export default function App() {
                   <td style={{ width: '5%', border: '1px solid #94a3b8', padding: 4, textAlign: 'center' }}>{r.sr}</td>
                   <td style={{ width: '32%', border: '1px solid #94a3b8', padding: 4, textAlign: 'left' }}>
                     <strong>{r.name}</strong>
+                    {r.dimensionOrCapacity && (
+                      <>
+                        <br />
+                        <span style={{ color: '#475569' }}>Size/Cap: {r.dimensionOrCapacity}</span>
+                      </>
+                    )}
+                    {r.technicalSpec && (
+                      <>
+                        <br />
+                        <span style={{ color: '#475569', fontStyle: 'italic' }}>{r.technicalSpec}</span>
+                      </>
+                    )}
                     <br />
                     <span style={{ color: '#475569' }}>HSN: {r.hsn} | GST: {r.gst}</span>
                   </td>
