@@ -60,7 +60,7 @@ const products = rawProducts
         : p.image,
   }));
 
-const clients = Array.isArray(rawClients) ? rawClients : [];
+const BASE_CLIENTS = Array.isArray(rawClients) ? rawClients : [];
 
 /* ---------------- helpers ---------------- */
 
@@ -964,7 +964,7 @@ function PrintThumb({ item }) {
 }
 
 /* ---------------- client quick-select combobox ---------------- */
-function ClientQuickSelect({ onSelect, onClear }) {
+function ClientQuickSelect({ clients = [], onSelect, onClear }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const wrapRef = useRef(null);
@@ -1078,7 +1078,7 @@ function DetailField({ label, children }) {
 const detailInputCls =
   'w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] font-medium text-slate-800 focus:border-slate-900 focus:outline-none';
 
-function QuoteDetailsForm({ details, setDetail, open, onToggle, onReset, archive = [] }) {
+function QuoteDetailsForm({ details, setDetail, open, onToggle, onReset, archive = [], clients = [] }) {
   return (
     <div className="border-b border-slate-200 bg-slate-50">
       <button
@@ -1102,6 +1102,7 @@ function QuoteDetailsForm({ details, setDetail, open, onToggle, onReset, archive
       {open && (
         <div className="flex flex-col gap-2.5 px-4 pb-3 animate-fade-in">
           <ClientQuickSelect
+            clients={clients}
             onSelect={(c) => {
               setDetail('clientName', c.legalEntity || c.accountName || '');
               setDetail('hotelName', c.propertyName || '');
@@ -1629,6 +1630,7 @@ export default function App() {
   const [cats, setCats] = useState([]);
   const [sort, setSort] = useState('relevance');
   const [customProducts, setCustomProducts] = useState(loadCustomProducts);
+  const [clients, setClients] = useState(BASE_CLIENTS);
   const [productOverrides, setProductOverrides] = useState({});
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [boqOpen, setBoqOpen] = useState(false);
@@ -1724,6 +1726,21 @@ export default function App() {
         setProductOverrides(map);
       },
       (err) => console.error('product_overrides snapshot error', err),
+    );
+    return () => unsub();
+  }, []);
+
+  // real-time Firestore sync for clients
+  useEffect(() => {
+    const unsub = onSnapshot(
+      collection(db, 'clients'),
+      (snap) => {
+        if (snap.size > 0) {
+          const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          setClients(list);
+        }
+      },
+      (err) => console.error('clients snapshot error', err),
     );
     return () => unsub();
   }, []);
@@ -1922,21 +1939,37 @@ export default function App() {
     setAddModalOpen(true);
   };
 
+  const handleAddClient = async (client) => {
+    const id = client.id || `c_${Date.now()}`;
+    const data = { ...client, id };
+    try {
+      await setDoc(doc(db, 'clients', String(id)), data);
+    } catch (err) {
+      console.error('save client error', err);
+    }
+    setClients((prev) => {
+      if (prev.some((c) => String(c.id) === String(id))) return prev;
+      return [...prev, data];
+    });
+    return id;
+  };
+
   const handleBOQTransfer = (rows, selectedClient) => {
     const included = (rows || []).filter((r) => r.include);
     const newCustom = [];
+    const toSave = [];
     setCart((prevCart) => {
       const next = { ...prevCart };
       included.forEach((r, idx) => {
         let sku = r.sku;
         const exists = catalog.some((p) => p.sku === sku);
         if (!sku || !exists) {
-          sku = `BOQ-${Date.now()}-${idx}`;
+          sku = r.sku || `AE-CUST-${Date.now().toString().slice(-6)}-${idx}`;
           newCustom.push({
-            brand: r.brand || 'Custom',
+            brand: r.brand || 'Aadi',
             sku,
             name: r.description || 'BOQ Item',
-            category: 'BOQ Imported',
+            category: 'Custom Kitchen / Commercial',
             subcategory: '',
             hsn: r.hsn || '',
             gst: r.gst || '18%',
@@ -1947,6 +1980,22 @@ export default function App() {
             createdAt: new Date().toISOString(),
           });
         }
+        if (r.saveToCatalog) {
+          const prod = {
+            brand: r.brand || 'Aadi',
+            sku,
+            name: r.description || 'BOQ Item',
+            category: 'Custom Kitchen / Commercial',
+            subcategory: '',
+            hsn: r.hsn || '',
+            gst: r.gst || '18%',
+            mrp: Number(r.unitPrice) || 0,
+            sellingPrice: Number(r.unitPrice) || 0,
+            image: r.image || '',
+            custom: true,
+          };
+          toSave.push(prod);
+        }
         next[sku] = (next[sku] || 0) + (Number(r.qty) || 1);
       });
       return next;
@@ -1954,20 +2003,26 @@ export default function App() {
     if (newCustom.length) {
       setCustomProducts((prev) => [...newCustom, ...prev]);
     }
+    // persist saved items to Firestore product_overrides
+    toSave.forEach((prod) => {
+      setDoc(doc(db, 'product_overrides', prod.sku), prod).catch((err) =>
+        console.error('save boq product error', err),
+      );
+    });
     if (selectedClient) {
       const c = clients.find((x) => String(x.id) === String(selectedClient));
       if (c) {
         setDetail('clientName', c.legalEntity || c.accountName || '');
         setDetail('hotelName', c.propertyName || '');
         setDetail('address', c.address || '');
-        setDetail('shippingAddress', c.address || '');
+        setDetail('shippingAddress', c.shippingAddress || c.address || '');
+        setDetail('clientGstin', c.gstin || '');
+        setDetail('stateCode', c.stateCode || (String(c.placeOfSupply || '').match(/\((\d+)\)/)?.[1] || details.stateCode));
         setDetail('contactPerson', c.contactPerson || '');
         setDetail('designation', c.designation || '');
         setDetail('contactPhone', c.phone || '');
         setDetail('contactEmail', c.email || '');
         setDetail('placeOfSupply', c.placeOfSupply || details.placeOfSupply);
-        const scMatch = String(c.placeOfSupply || '').match(/\((\d+)\)/);
-        if (scMatch) setDetail('stateCode', scMatch[1]);
       }
     }
     setBoqOpen(false);
@@ -2741,6 +2796,7 @@ export default function App() {
                   showToast('Details reset to defaults');
                 }}
                 archive={archive}
+                clients={clients}
               />
 
               {lineItems.length === 0 ? (
@@ -3208,6 +3264,7 @@ export default function App() {
           catalog={catalog}
           clients={clients}
           onTransfer={handleBOQTransfer}
+          onAddClient={handleAddClient}
           onClose={() => setBoqOpen(false)}
         />
       )}

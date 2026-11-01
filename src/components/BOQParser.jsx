@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import * as XLSX from 'xlsx/xlsx.mjs';
-import { UploadCloud, Trash2, CheckCircle2, AlertTriangle, Search, X } from 'lucide-react';
+import { UploadCloud, Trash2, CheckCircle2, AlertTriangle, Search, X, Plus } from 'lucide-react';
 
 function fileToDataUrl(file, maxDim = 600) {
   return new Promise((resolve, reject) => {
@@ -50,7 +50,6 @@ function normalizeGst(v, fallback = '18%') {
   const m = String(v).match(/([\d.]+)/);
   if (!m) return fallback;
   const n = Number(m[1]);
-  if (![0, 5, 12, 18, 28].includes(n)) return `${n}%`;
   return `${n}%`;
 }
 
@@ -66,7 +65,7 @@ function fuzzyScore(query, product) {
   for (const t of tokens) {
     if (hay.includes(t)) score += 1;
   }
-  if (hay.includes(q)) score += tokens.length; // phrase bonus
+  if (hay.includes(q)) score += tokens.length;
   return score;
 }
 
@@ -85,8 +84,8 @@ function bestMatch(description, catalog) {
   const maxScore = tokens.length * 2;
   const ratio = maxScore > 0 ? bestScore / maxScore : 0;
   let level = 'none';
-  if (best && ratio >= 0.7) level = 'high';
-  else if (best && ratio >= 0.3) level = 'suggested';
+  if (best && ratio >= 0.8) level = 'high';
+  else if (best && ratio >= 0.6) level = 'suggested';
   else level = 'none';
   return best ? { product: best, score: bestScore, level } : null;
 }
@@ -114,11 +113,25 @@ function parseTextLines(text) {
   return rows;
 }
 
-export default function BOQParser({ catalog = [], clients = [], onTransfer, onClose }) {
+export default function BOQParser({ catalog = [], clients = [], onTransfer, onClose, onAddClient }) {
   const [tab, setTab] = useState('excel');
   const [rows, setRows] = useState([]);
   const [selectedClient, setSelectedClient] = useState('');
   const [search, setSearch] = useState('');
+  const [saveAll, setSaveAll] = useState(false);
+  const [bulkGst, setBulkGst] = useState('');
+  const [showNewClient, setShowNewClient] = useState(false);
+  const [newClient, setNewClient] = useState({
+    propertyName: '',
+    legalEntity: '',
+    address: '',
+    shippingAddress: '',
+    gstin: '',
+    stateCode: '27',
+    contactPerson: '',
+    designation: '',
+    email: '',
+  });
 
   const matchedRows = useMemo(
     () =>
@@ -126,29 +139,31 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
         const m = r.matchedProduct || bestMatch(r.description, catalog);
         const product = m?.product || null;
         const level = m?.level || 'none';
+        const defaultSave = level !== 'high';
         return {
           ...r,
           _match: m,
           _level: level,
           sku: r.sku || (product && level !== 'none' ? product.sku : ''),
-          brand: r.brand || (product ? product.brand : ''),
+          brand: r.brand || (product ? product.brand : (r.brand || '')),
           hsn: r.hsn || (product ? product.hsn : ''),
           unitPrice: r.unitPrice || (product ? Number(product.sellingPrice) || 0 : 0),
           gst: r.gst || (product ? product.gst : '18%'),
           image: r.image || (product ? product.image : ''),
+          saveToCatalog: r.saveToCatalog != null ? r.saveToCatalog : (saveAll ? true : defaultSave),
         };
       }),
-    [rows, catalog],
+    [rows, catalog, saveAll],
   );
 
   const filteredCatalog = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return catalog.slice(0, 60);
+    if (!q) return catalog.slice(0, 80);
     return catalog
       .filter((p) =>
         [p.name, p.brand, p.sku, p.hsn].filter(Boolean).join(' ').toLowerCase().includes(q),
       )
-      .slice(0, 60);
+      .slice(0, 80);
   }, [catalog, search]);
 
   const handleFile = async (file) => {
@@ -190,6 +205,7 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
         image: '',
         sku: '',
         include: true,
+        saveToCatalog: false,
       };
     }).filter((r) => r.description);
     setRows(parsed);
@@ -208,6 +224,7 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
       image: r.image || '',
       sku: '',
       include: true,
+      saveToCatalog: false,
     }));
     setRows(parsed);
   };
@@ -223,7 +240,7 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
       {
         id: Math.random().toString(36).slice(2),
         description: '',
-        brand: '',
+        brand: 'Aadi',
         qty: 1,
         unit: 'Nos',
         unitPrice: 0,
@@ -232,6 +249,7 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
         image: '',
         sku: '',
         include: true,
+        saveToCatalog: true,
       },
     ]);
 
@@ -245,9 +263,68 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
     }
   };
 
+  const toggleAll = (checked) => {
+    setRows((prev) => prev.map((r) => ({ ...r, include: checked })));
+  };
+
+  const bulkRemoveSelected = () => {
+    setRows((prev) => prev.filter((r) => !r.include));
+  };
+
+  const bulkSetGst = (gst) => {
+    setRows((prev) => prev.map((r) => (r.include ? { ...r, gst } : r)));
+  };
+
+  const handleBulkAction = (val) => {
+    if (val === 'gst18') bulkSetGst('18%');
+    else if (val === 'gst5') bulkSetGst('5%');
+    else if (val === 'remove') bulkRemoveSelected();
+    setBulkGst('');
+  };
+
+  const handleCreateClient = async () => {
+    if (!newClient.propertyName.trim()) return;
+    const client = {
+      id: `c_${Date.now()}`,
+      category: 'Custom Clients',
+      accountName: newClient.legalEntity || newClient.propertyName,
+      propertyName: newClient.propertyName,
+      legalEntity: newClient.legalEntity || newClient.propertyName,
+      address: newClient.address || '',
+      city: '',
+      contactPerson: newClient.contactPerson || '',
+      designation: newClient.designation || '',
+      phone: '',
+      email: newClient.email || '',
+      placeOfSupply: newClient.stateCode === '27' ? 'Maharashtra (27)' : `State (${newClient.stateCode})`,
+      gstin: newClient.gstin || '',
+      shippingAddress: newClient.shippingAddress || newClient.address || '',
+    };
+    if (onAddClient) {
+      const id = await onAddClient(client);
+      setSelectedClient(String(id || client.id));
+    } else {
+      setSelectedClient(String(client.id));
+    }
+    setShowNewClient(false);
+    setNewClient({
+      propertyName: '',
+      legalEntity: '',
+      address: '',
+      shippingAddress: '',
+      gstin: '',
+      stateCode: '27',
+      contactPerson: '',
+      designation: '',
+      email: '',
+    });
+  };
+
   const included = matchedRows.filter((r) => r.include);
+  const allSelected = matchedRows.length > 0 && matchedRows.every((r) => r.include);
   const matchedCount = included.filter((r) => r._level !== 'none').length;
   const estimated = included.reduce((s, r) => s + (Number(r.qty) || 0) * (Number(r.unitPrice) || 0), 0);
+  const zeroPriceCount = included.filter((r) => !(Number(r.unitPrice) > 0)).length;
 
   const levelBadge = (level) => {
     if (level === 'high')
@@ -255,6 +332,14 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
     if (level === 'suggested')
       return <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-extrabold text-amber-800">Suggested</span>;
     return <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-extrabold text-slate-700">Custom</span>;
+  };
+
+  const handleTransfer = () => {
+    const enriched = matchedRows.map((r) => ({
+      ...r,
+      saveToCatalog: saveAll ? true : r.saveToCatalog,
+    }));
+    if (onTransfer) onTransfer(enriched, selectedClient);
   };
 
   return (
@@ -269,7 +354,6 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
         </button>
       </div>
 
-      {/* Tabs */}
       <div className="flex gap-1 border-b border-slate-200 bg-white px-5 pt-2">
         {[
           { id: 'excel', label: 'Excel / Spreadsheet Upload' },
@@ -323,26 +407,34 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
           </div>
         )}
 
-        {/* Verification grid */}
         <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
           <table className="w-full text-left text-[12px]">
             <thead className="bg-slate-50 text-[10px] font-extrabold uppercase tracking-wide text-slate-500">
               <tr>
-                <th className="px-2 py-2">Inc</th>
+                <th className="px-2 py-2">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={(e) => toggleAll(e.target.checked)}
+                    aria-label="Select all"
+                  />
+                </th>
                 <th className="px-2 py-2">Photo</th>
                 <th className="px-2 py-2">Match</th>
                 <th className="px-2 py-2">Item Description</th>
+                <th className="px-2 py-2">Make / Brand</th>
                 <th className="px-2 py-2">SKU / HSN</th>
                 <th className="px-2 py-2">Qty</th>
                 <th className="px-2 py-2">Unit Cost</th>
                 <th className="px-2 py-2">GST</th>
+                <th className="px-2 py-2">Save</th>
                 <th className="px-2 py-2"></th>
               </tr>
             </thead>
             <tbody>
               {matchedRows.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-3 py-6 text-center text-slate-400">
+                  <td colSpan={11} className="px-3 py-6 text-center text-slate-400">
                     No items parsed yet.
                   </td>
                 </tr>
@@ -390,6 +482,14 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
                     )}
                   </td>
                   <td className="px-2 py-2">
+                    <input
+                      value={r.brand}
+                      onChange={(e) => updateRow(r.id, { brand: e.target.value })}
+                      placeholder="Aadi"
+                      className="w-full rounded border border-slate-200 px-2 py-1 text-[11px] font-medium focus:border-slate-900 focus:outline-none"
+                    />
+                  </td>
+                  <td className="px-2 py-2">
                     <select
                       value={r.sku}
                       onChange={(e) => {
@@ -418,14 +518,12 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
                       placeholder="HSN"
                       className="mt-1 w-full rounded border border-slate-200 px-2 py-1 text-[11px] font-mono focus:border-slate-900 focus:outline-none"
                     />
-                    {r._level !== 'none' && (
-                      <input
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                        placeholder="Search catalog..."
-                        className="mt-1 w-full rounded border border-slate-200 px-2 py-1 text-[10px] focus:border-slate-900 focus:outline-none"
-                      />
-                    )}
+                    <input
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      placeholder="Search catalog..."
+                      className="mt-1 w-full rounded border border-slate-200 px-2 py-1 text-[10px] focus:border-slate-900 focus:outline-none"
+                    />
                   </td>
                   <td className="px-2 py-2">
                     <input
@@ -458,6 +556,14 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
                       ))}
                     </select>
                   </td>
+                  <td className="px-2 py-2 text-center">
+                    <input
+                      type="checkbox"
+                      checked={!!r.saveToCatalog}
+                      onChange={(e) => updateRow(r.id, { saveToCatalog: e.target.checked })}
+                      aria-label="Save to catalog"
+                    />
+                  </td>
                   <td className="px-2 py-2">
                     <button onClick={() => removeRow(r.id)} className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600" aria-label="Delete row">
                       <Trash2 size={14} />
@@ -469,26 +575,53 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
           </table>
         </div>
 
-        <button
-          onClick={addCustomLine}
-          className="mt-3 flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-[12px] font-bold text-slate-700 hover:border-slate-500"
-        >
-          <CheckCircle2 size={14} /> Add New Custom Line
-        </button>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            onClick={addCustomLine}
+            className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-[12px] font-bold text-slate-700 hover:border-slate-500"
+          >
+            <Plus size={14} /> Add New Custom Line
+          </button>
+          <label className="flex items-center gap-2 text-[12px] font-bold text-slate-700">
+            <input type="checkbox" checked={saveAll} onChange={(e) => setSaveAll(e.target.checked)} />
+            Save all custom/edited items to Master Catalog
+          </label>
+        </div>
       </div>
 
-      {/* Action bar */}
       <div className="border-t border-slate-200 bg-white px-5 py-3">
         <div className="flex flex-wrap items-center gap-3">
           <div className="text-[12px] font-bold text-slate-700">
             Total Parsed: {matchedRows.length} items | Matched: {matchedCount} items | Estimated Basic Value: ₹{Math.round(estimated).toLocaleString('en-IN')}
           </div>
+          {zeroPriceCount > 0 && (
+            <span className="rounded-full bg-amber-100 px-2 py-1 text-[11px] font-extrabold text-amber-800">
+              ⚠️ {zeroPriceCount} items have ₹0 price
+            </span>
+          )}
+          <select
+            value={bulkGst}
+            onChange={(e) => handleBulkAction(e.target.value)}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[12px] font-bold focus:border-slate-900 focus:outline-none"
+          >
+            <option value="">Bulk actions...</option>
+            <option value="gst18">Set Selected GST to 18%</option>
+            <option value="gst5">Set Selected GST to 5%</option>
+            <option value="remove">Remove Selected</option>
+          </select>
           <select
             value={selectedClient}
-            onChange={(e) => setSelectedClient(e.target.value)}
+            onChange={(e) => {
+              if (e.target.value === '__new__') {
+                setShowNewClient(true);
+              } else {
+                setSelectedClient(e.target.value);
+              }
+            }}
             className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[12px] font-bold focus:border-slate-900 focus:outline-none"
           >
             <option value="">Select Client (optional)</option>
+            <option value="__new__">[+ Add New Client...]</option>
             {clients.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.propertyName} — {c.legalEntity || c.accountName}
@@ -496,13 +629,68 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
             ))}
           </select>
           <button
-            onClick={() => onTransfer(matchedRows, selectedClient)}
+            onClick={handleTransfer}
             className="ml-auto flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2 text-[13px] font-bold text-white hover:bg-slate-700"
           >
             Transfer to Live Quotation
           </button>
         </div>
       </div>
+
+      {showNewClient && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/60" onClick={() => setShowNewClient(false)} />
+          <div className="relative w-full max-w-lg rounded-2xl bg-white p-5 shadow-pop">
+            <h2 className="mb-3 text-[15px] font-extrabold">Add New Client</h2>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <label className="block sm:col-span-2">
+                <span className="mb-0.5 block text-[11px] font-bold uppercase tracking-wide text-slate-500">Client / Property Name</span>
+                <input value={newClient.propertyName} onChange={(e) => setNewClient((p) => ({ ...p, propertyName: e.target.value }))} className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-[13px] font-medium focus:border-slate-900 focus:outline-none" />
+              </label>
+              <label className="block sm:col-span-2">
+                <span className="mb-0.5 block text-[11px] font-bold uppercase tracking-wide text-slate-500">Legal Entity / Billing Company</span>
+                <input value={newClient.legalEntity} onChange={(e) => setNewClient((p) => ({ ...p, legalEntity: e.target.value }))} className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-[13px] font-medium focus:border-slate-900 focus:outline-none" />
+              </label>
+              <label className="block sm:col-span-2">
+                <span className="mb-0.5 block text-[11px] font-bold uppercase tracking-wide text-slate-500">Billing Address</span>
+                <textarea value={newClient.address} onChange={(e) => setNewClient((p) => ({ ...p, address: e.target.value }))} rows={2} className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-[13px] font-medium focus:border-slate-900 focus:outline-none" />
+              </label>
+              <label className="block sm:col-span-2">
+                <span className="mb-0.5 block text-[11px] font-bold uppercase tracking-wide text-slate-500">Shipping Address</span>
+                <textarea value={newClient.shippingAddress} onChange={(e) => setNewClient((p) => ({ ...p, shippingAddress: e.target.value }))} rows={2} className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-[13px] font-medium focus:border-slate-900 focus:outline-none" />
+              </label>
+              <label className="block">
+                <span className="mb-0.5 block text-[11px] font-bold uppercase tracking-wide text-slate-500">GSTIN</span>
+                <input value={newClient.gstin} onChange={(e) => setNewClient((p) => ({ ...p, gstin: e.target.value.toUpperCase() }))} className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-[13px] font-mono focus:border-slate-900 focus:outline-none" />
+              </label>
+              <label className="block">
+                <span className="mb-0.5 block text-[11px] font-bold uppercase tracking-wide text-slate-500">State Code</span>
+                <input value={newClient.stateCode} onChange={(e) => setNewClient((p) => ({ ...p, stateCode: e.target.value.replace(/[^0-9]/g, '') }))} className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-[13px] font-mono focus:border-slate-900 focus:outline-none" />
+              </label>
+              <label className="block">
+                <span className="mb-0.5 block text-[11px] font-bold uppercase tracking-wide text-slate-500">Contact Person</span>
+                <input value={newClient.contactPerson} onChange={(e) => setNewClient((p) => ({ ...p, contactPerson: e.target.value }))} className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-[13px] font-medium focus:border-slate-900 focus:outline-none" />
+              </label>
+              <label className="block">
+                <span className="mb-0.5 block text-[11px] font-bold uppercase tracking-wide text-slate-500">Designation</span>
+                <input value={newClient.designation} onChange={(e) => setNewClient((p) => ({ ...p, designation: e.target.value }))} className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-[13px] font-medium focus:border-slate-900 focus:outline-none" />
+              </label>
+              <label className="block sm:col-span-2">
+                <span className="mb-0.5 block text-[11px] font-bold uppercase tracking-wide text-slate-500">Email</span>
+                <input type="email" value={newClient.email} onChange={(e) => setNewClient((p) => ({ ...p, email: e.target.value }))} className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-[13px] font-medium focus:border-slate-900 focus:outline-none" />
+              </label>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button onClick={() => setShowNewClient(false)} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-[13px] font-bold text-slate-600 hover:border-slate-400">
+                Cancel
+              </button>
+              <button onClick={handleCreateClient} className="rounded-lg bg-slate-900 px-4 py-2 text-[13px] font-bold text-white hover:bg-slate-700">
+                Save Client
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
