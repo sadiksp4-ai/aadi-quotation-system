@@ -2495,136 +2495,106 @@ export default function App() {
   return (
     <div className="min-h-screen">
       {/* ============ HEADER ============ */}
-      <header className="no-print sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur">
-        <div className="mx-auto flex max-w-[1400px] flex-wrap items-center gap-2 px-3 py-2.5 sm:gap-3 sm:px-5">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <img
-              src={`${import.meta.env.BASE_URL}aadi-logo.png`}
-              alt="Aadi Enterprises"
-              className="h-9 w-auto shrink-0 object-contain"
-            />
-            <div className="min-w-0">
-              <h1 className="truncate text-[15px] font-extrabold leading-tight text-slate-900 sm:text-lg">
-                Aadi Enterprises - Quotation System
-              </h1>
-              <p className="flex items-center gap-1.5 text-[11px] font-medium text-slate-500 sm:text-xs">
-                B2B Product Discovery & Quotation
-                <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-bold tabular-nums text-emerald-800">
-                  {filtered.length} / {catalog.length} products
-                </span>
-              </p>
-            </div>
-          </div>
-
-          {/* search */}
-          <div className="relative order-3 w-full sm:order-2 sm:w-auto sm:flex-1 sm:max-w-md sm:mx-auto">
-            <Search
-              size={16}
-              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-            />
-            <input
-              value={searchRaw}
-              onChange={(e) => setSearchRaw(e.target.value)}
-              placeholder="Quick search — name, SKU, category, brand…"
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-9 text-sm font-medium focus:border-slate-900 focus:bg-white focus:outline-none"
-            />
-            {searchRaw && (
-              <button
-                onClick={() => setSearchRaw('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
-                aria-label="Clear search"
-              >
-                <X size={14} />
-              </button>
-            )}
-          </div>
-
-          {/* add product + cart */}
-          <div className="order-2 ml-auto flex items-center gap-2 sm:order-3 sm:ml-0">
-            <button
-              onClick={() => setBoqOpen(true)}
-              className="flex items-center gap-1.5 rounded-xl border-2 border-indigo-600 bg-white px-3 py-2 text-[13px] font-bold text-indigo-700 shadow-sm transition hover:bg-indigo-600 hover:text-white active:scale-[.98]"
-              title="Import BOQ / RFQ"
-            >
-              <UploadCloud size={16} />
-              <span className="hidden sm:inline">Import BOQ / RFQ</span>
-            </button>
-            <button
-              onClick={openAddModal}
-              className="flex items-center gap-1.5 rounded-xl border-2 border-slate-900 bg-white px-3 py-2 text-[13px] font-bold text-slate-900 shadow-sm transition hover:bg-slate-900 hover:text-white active:scale-[.98]"
-              title="Add a custom product to the catalog"
-            >
-              <Plus size={16} />
-              <span className="hidden sm:inline">Add Product</span>
-            </button>
-            <button
-              onClick={() => setRecordsOpen(true)}
-              className="relative flex items-center gap-1.5 rounded-xl border-2 border-slate-200 bg-white px-3 py-2 text-[13px] font-bold text-slate-700 shadow-sm transition hover:border-slate-400 hover:text-slate-900 active:scale-[.98]"
-              title="Quotation Records"
-            >
-              <ClipboardList size={16} />
-              <span className="hidden sm:inline">Quotation Records</span>
-              {archive.length > 0 && (
-                <span className="absolute -right-2 -top-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#C8102E] px-1 text-[10px] font-extrabold tabular-nums text-white">
-                  {archive.length}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => setDrawerOpen(true)}
-              className="flex items-center gap-2.5 rounded-xl bg-slate-900 px-3.5 py-2 text-white shadow-sm transition hover:bg-slate-700 active:scale-[.98]"
-            >
-              <span className="relative">
-                <ShoppingCart size={18} />
-                {itemCount > 0 && (
-                  <span className="absolute -right-2 -top-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#C8102E] px-1 text-[10px] font-extrabold tabular-nums">
-                    {itemCount}
-                  </span>
-                )}
-              </span>
-              <span className="text-left leading-tight">
-                <span className="block text-[10px] font-semibold uppercase tracking-wide text-slate-300">
-                  Quotation Summary
-                </span>
-                <span className="block text-[13px] font-extrabold tabular-nums">
-                  {itemCount} items · {fmt(grandTotal)}
-                </span>
-              </span>
-            </button>
-            <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5">
-              <span
-                className={`flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br text-[13px] font-extrabold text-white ${
-                  authUser?.name === 'Aditya'
-                    ? 'from-orange-500 to-amber-600'
-                    : authUser?.name === 'Abhijit'
-                    ? 'from-emerald-500 to-green-600'
-                    : 'from-slate-700 to-slate-900'
-                }`}
-              >
-                {String(authUser?.name || '?').charAt(0).toUpperCase()}
-              </span>
-              <div className="hidden leading-tight sm:block">
-                <span className="block text-[12px] font-extrabold text-slate-800">
-                  {authUser?.name}
-                </span>
-                {authUser?.role && (
-                  <span className="block text-[10px] font-medium text-slate-500">
-                    {authUser?.role}
-                  </span>
-                )}
-              </div>
-              <button
-                onClick={() => setAuthUser(null)}
-                className="flex items-center gap-1 rounded-lg bg-white px-2 py-1 text-[11px] font-bold text-slate-600 shadow-sm transition hover:bg-red-50 hover:text-red-600"
-                title="Sign Out"
-              >
-                <LogOut size={13} />
-                <span className="hidden sm:inline">Sign Out</span>
-              </button>
-            </div>
-          </div>
+<header className="no-print sticky top-0 z-40 h-16 px-6 bg-white border-b border-slate-200 flex items-center justify-between gap-4">
+      {/* Left: branding */}
+      <div className="flex items-center gap-3 min-w-0">
+        <img src={`${import.meta.env.BASE_URL}aadi-logo.png`} alt="Aadi Enterprises" className="h-9 w-auto shrink-0 object-contain" />
+        <div className="min-w-0">
+          <h1 className="text-sm font-extrabold leading-tight text-slate-900">Aadi Enterprises</h1>
+          <p className="text-[11px] font-medium text-slate-500">Quotation Portal</p>
         </div>
-      </header>
+        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+          {catalog.length} products
+        </span>
+      </div>
+
+      {/* Center: search */}
+      <div className="relative max-w-md w-full">
+        <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+        <input
+          value={searchRaw}
+          onChange={(e) => setSearchRaw(e.target.value)}
+          placeholder="Search 777+ products, SKUs, HSN..."
+          className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-16 text-sm font-medium focus:border-slate-900 focus:bg-white focus:outline-none"
+        />
+        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-bold text-slate-400">
+          Ctrl K
+        </span>
+        {searchRaw && (
+          <button
+            onClick={() => setSearchRaw('')}
+            className="absolute right-12 top-1/2 -translate-y-1/2 rounded-full p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+            aria-label="Clear search"
+          >
+            <X size={14} />
+          </button>
+        )}
+      </div>
+
+      {/* Right: actions + account */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => setBoqOpen(true)}
+          className="flex h-9 items-center gap-1.5 rounded-xl bg-indigo-600 px-3 text-[13px] font-bold text-white shadow-sm transition hover:bg-indigo-700 active:scale-[.98]"
+          title="Import BOQ / RFQ"
+        >
+          <UploadCloud size={15} />
+          <span className="hidden sm:inline">Import BOQ</span>
+        </button>
+        <button
+          onClick={openAddModal}
+          className="flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[13px] font-bold text-slate-700 shadow-sm transition hover:border-slate-400 hover:text-slate-900 active:scale-[.98]"
+          title="Add a custom product to the catalog"
+        >
+          <Plus size={15} />
+          <span className="hidden sm:inline">+ Add Product</span>
+        </button>
+        <button
+          onClick={() => setRecordsOpen(true)}
+          className="relative flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[13px] font-bold text-slate-700 shadow-sm transition hover:border-slate-400 hover:text-slate-900 active:scale-[.98]"
+          title="Quotation Records"
+        >
+          <ClipboardList size={15} />
+          <span className="hidden sm:inline">Records</span>
+          {archive.length > 0 && (
+            <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#C8102E] px-1 text-[9px] font-extrabold tabular-nums text-white">
+              {archive.length}
+            </span>
+          )}
+        </button>
+        <button
+          onClick={() => setDrawerOpen(true)}
+          className="flex h-9 items-center gap-2 rounded-xl bg-slate-900 px-3.5 text-white shadow-sm transition hover:bg-slate-700 active:scale-[.98]"
+        >
+          <ShoppingCart size={15} />
+          <span className="text-[12px] font-extrabold tabular-nums">
+            🛒 {itemCount} items • {fmt(grandTotal)}
+          </span>
+        </button>
+        <div className="flex items-center gap-2 rounded-full bg-slate-50 border border-slate-200 pl-1 pr-3 py-1 hover:bg-slate-100 transition-colors">
+          <span
+            className={`flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br text-xs font-bold text-white ${
+              authUser?.name === 'Aditya'
+                ? 'from-orange-500 to-amber-600'
+                : authUser?.name === 'Abhijit'
+                ? 'from-emerald-500 to-green-600'
+                : 'from-slate-700 to-slate-900'
+            }`}
+          >
+            {String(authUser?.name || '?').charAt(0).toUpperCase()}
+          </span>
+          <span className="text-xs font-semibold text-slate-800">{authUser?.name}</span>
+          <button
+            onClick={() => setAuthUser(null)}
+            className="flex items-center justify-center rounded-md p-1 text-slate-500 transition hover:bg-red-50 hover:text-red-600"
+            title="Sign Out"
+          >
+            <LogOut size={13} />
+          </button>
+        </div>
+      </div>
+    </header>
+
 
       {/* ============ BODY ============ */}
       <div className="no-print mx-auto flex max-w-[1400px] gap-5 px-3 pb-4 pt-6 sm:px-5">

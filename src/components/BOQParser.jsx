@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx/xlsx.mjs';
 import { UploadCloud, Trash2, CheckCircle2, AlertTriangle, Search, X, Plus } from 'lucide-react';
 
@@ -132,6 +132,90 @@ const baseRow = (extra = {}) => ({
   ...extra,
 });
 
+const RowCatalogSearch = memo(function RowCatalogSearch({ indexedCatalog, rowId, onSelectProduct }) {
+  const [query, setQuery] = useState('');
+  const [debounced, setDebounced] = useState('');
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(query), 150);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  useEffect(() => {
+    if (!open) return;
+    const esc = (e) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('keydown', esc);
+    return () => document.removeEventListener('keydown', esc);
+  }, [open]);
+
+  const results = useMemo(() => {
+    const q = debounced.trim().toLowerCase();
+    if (q.length < 2) return [];
+    const tokens = q.split(/\s+/).filter(Boolean);
+    return indexedCatalog
+      .filter(({ lookup }) => tokens.every((t) => lookup.includes(t)))
+      .slice(0, 12)
+      .map(({ p }) => p);
+  }, [debounced, indexedCatalog]);
+
+  return (
+    <div className="relative boq-search-wrap">
+      <input
+        value={query}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        placeholder="Search catalog..."
+        className="w-full rounded border border-slate-200 px-2 py-1 text-[10px] focus:border-slate-900 focus:outline-none"
+      />
+      {open && debounced.trim().length >= 2 && (
+        <div className="absolute left-0 top-full z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-xl">
+          {results.length === 0 && (
+            <div className="px-3 py-2 text-[11px] text-slate-400">No matches</div>
+          )}
+          {results.map((p) => (
+            <button
+              key={p.sku}
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onSelectProduct(rowId, p);
+                setQuery('');
+                setOpen(false);
+              }}
+              className="flex w-full items-center gap-2 border-b border-slate-100 px-2 py-1.5 text-left hover:bg-slate-50"
+            >
+              {p.image ? (
+                <img src={p.image} alt="" className="h-8 w-8 rounded border border-slate-200 object-contain bg-white" />
+              ) : (
+                <div className="flex h-8 w-8 items-center justify-center rounded border border-slate-200 text-[8px] text-slate-400">
+                  N/A
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[11px] font-bold text-slate-800">{p.name}</div>
+                <div className="flex items-center gap-1 text-[10px] text-slate-500">
+                  <span className="rounded bg-slate-100 px-1 font-bold">{p.brand}</span>
+                  <span className="font-mono">{p.sku}</span>
+                </div>
+              </div>
+              <div className="text-right text-[10px] font-bold text-slate-700">
+                <div>Rs {Number(p.sellingPrice || 0).toLocaleString('en-IN')}</div>
+                <div className="text-slate-400">{p.gst}</div>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+});
+
 export default function BOQParser({ catalog = [], clients = [], onTransfer, onClose, onAddClient }) {
   const [tab, setTab] = useState('excel');
   const [rows, setRows] = useState([]);
@@ -174,6 +258,11 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
       document.removeEventListener('keydown', esc);
     };
   }, []);
+
+  const indexedCatalog = useMemo(
+    () => catalog.map((p) => ({ p, lookup: `${p.name} ${p.sku} ${p.brand}`.toLowerCase() })),
+    [catalog],
+  );
 
   const matchedRows = useMemo(
     () =>
@@ -533,51 +622,11 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
                     />
                   </td>
                   <td className="px-2 py-2">
-                    <div className="relative boq-search-wrap">
-                      <input
-                        value={r.searchQuery || ''}
-                        onChange={(e) => updateRow(r.id, { searchQuery: e.target.value, searchOpen: true })}
-                        placeholder="Search catalog..."
-                        className="w-full rounded border border-slate-200 px-2 py-1 text-[10px] focus:border-slate-900 focus:outline-none"
-                      />
-                      {r.searchOpen && (r.searchQuery || '').trim() && (
-                        <div className="absolute left-0 top-full z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-xl">
-                          {catalogSearchResults(r.searchQuery).length === 0 && (
-                            <div className="px-3 py-2 text-[11px] text-slate-400">No matches</div>
-                          )}
-                          {catalogSearchResults(r.searchQuery).map((p) => (
-                            <button
-                              key={p.sku}
-                              type="button"
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                selectProduct(r.id, p);
-                              }}
-                              className="flex w-full items-center gap-2 border-b border-slate-100 px-2 py-1.5 text-left hover:bg-slate-50"
-                            >
-                              {p.image ? (
-                                <img src={p.image} alt="" className="h-8 w-8 rounded border border-slate-200 object-contain bg-white" />
-                              ) : (
-                                <div className="flex h-8 w-8 items-center justify-center rounded border border-slate-200 text-[8px] text-slate-400">
-                                  N/A
-                                </div>
-                              )}
-                              <div className="min-w-0 flex-1">
-                                <div className="truncate text-[11px] font-bold text-slate-800">{p.name}</div>
-                                <div className="flex items-center gap-1 text-[10px] text-slate-500">
-                                  <span className="rounded bg-slate-100 px-1 font-bold">{p.brand}</span>
-                                  <span className="font-mono">{p.sku}</span>
-                                </div>
-                              </div>
-                              <div className="text-right text-[10px] font-bold text-slate-700">
-                                <div>₹{Number(p.sellingPrice || 0).toLocaleString('en-IN')}</div>
-                                <div className="text-slate-400">{p.gst}</div>
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                    <RowCatalogSearch
+                      indexedCatalog={indexedCatalog}
+                      rowId={r.id}
+                      onSelectProduct={selectProduct}
+                    />
                     <select
                       value={r.sku}
                       onChange={(e) => {
