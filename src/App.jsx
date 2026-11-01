@@ -1415,7 +1415,7 @@ function ProductCard({ product, qty, onAdd, onInc, onDec, onEdit, onDelete }) {
         {/* title 2-line clamp */}
         <h3
           title={product.name}
-          className="line-clamp-2 min-h-[2.75rem] text-[13px] font-medium leading-snug text-slate-800"
+          className="line-clamp-3 min-h-[3.25rem] flex items-start text-[13px] font-medium leading-snug text-slate-800"
         >
           {product.name}
         </h3>
