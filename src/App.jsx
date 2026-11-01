@@ -1415,11 +1415,11 @@ function ProductCard({ product, qty, onAdd, onInc, onDec, onEdit, onDelete }) {
         {/* title 2-line clamp */}
         <h3
           title={product.name}
-          className="line-clamp-3 min-h-[3.25rem] flex items-start text-[13px] font-medium leading-snug text-slate-800"
+          className="text-sm font-semibold text-slate-900 leading-snug line-clamp-none min-h-[3.75rem] flex items-start break-words"
         >
           {product.name}
         </h3>
-        <p className="mb-2 truncate text-xs uppercase tracking-wider text-slate-500">
+        <p className="mt-1 block text-[11px] font-medium text-slate-400 uppercase tracking-wider">
           {product.category}
         </p>
 
@@ -1450,14 +1450,14 @@ function ProductCard({ product, qty, onAdd, onInc, onDec, onEdit, onDelete }) {
                 onChange={(e) =>
                   setInputQty(Math.max(1, Number(e.target.value) || 1))
                 }
-                className="w-16 rounded-lg border border-slate-200 bg-white px-2 py-2 text-center text-[13px] font-bold tabular-nums focus:border-slate-900 focus:outline-none"
+                className="w-12 h-9 text-center border border-slate-200 rounded-lg text-sm font-medium focus:ring-1 focus:ring-slate-900"
                 aria-label="Quantity to add"
               />
               <button
                 onClick={() => onAdd(Math.max(1, Number(inputQty) || 1))}
-                className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[13px] font-bold text-white transition hover:bg-slate-700 active:scale-[.98]"
+                className="h-9 px-3 text-xs font-semibold rounded-lg bg-slate-900 text-white hover:bg-slate-800 flex items-center justify-center gap-1.5 transition-all active:scale-95 whitespace-nowrap"
               >
-                <ShoppingCart size={15} /> Add to Quote
+                <ShoppingCart className="w-3.5 h-3.5" /> Add to Quote
               </button>
             </div>
           ) : (
@@ -3227,34 +3227,40 @@ export default function App() {
           <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 10, fontSize: 9.5 }}>
             <thead>
               <tr style={{ background: '#0f172a', color: '#fff' }}>
-                {['Sr.', 'Item Description', 'Make / Brand & SKU', 'Image', 'List Price (MRP)', 'Disc %', 'Best Unit Price (₹)', 'Qty', 'Total (₹)'].map((h) => (
-                  <th key={h} style={{ padding: '6px 4px', border: '1px solid #0f172a', fontSize: 9 }}>{h}</th>
-                ))}
+                <th style={{ width: '5%', padding: '6px 4px', border: '1px solid #0f172a', fontSize: 9, textAlign: 'center' }}>Sr.</th>
+                <th style={{ width: '32%', padding: '6px 4px', border: '1px solid #0f172a', fontSize: 9, textAlign: 'left' }}>Item Description</th>
+                <th style={{ width: '15%', padding: '6px 4px', border: '1px solid #0f172a', fontSize: 9, textAlign: 'center' }}>Make / Brand & SKU</th>
+                <th style={{ width: '8%', padding: '6px 4px', border: '1px solid #0f172a', fontSize: 9, textAlign: 'center' }}>Image</th>
+                <th style={{ width: '10%', padding: '6px 4px', border: '1px solid #0f172a', fontSize: 9, textAlign: 'right' }}>List Price (MRP)</th>
+                <th style={{ width: '7%', padding: '6px 4px', border: '1px solid #0f172a', fontSize: 9, textAlign: 'center' }}>Disc %</th>
+                <th style={{ width: '11%', padding: '6px 4px', border: '1px solid #0f172a', fontSize: 9, textAlign: 'right' }}>Best Unit Price</th>
+                <th style={{ width: '5%', padding: '6px 4px', border: '1px solid #0f172a', fontSize: 9, textAlign: 'center' }}>Qty</th>
+                <th style={{ width: '12%', padding: '6px 4px', border: '1px solid #0f172a', fontSize: 9, textAlign: 'right' }}>Total (INR)</th>
               </tr>
             </thead>
             <tbody>
-              {printRows.map((r) => (
+              {printRows.map((r) => {
+                const listPrice = Number(r.mrp) || 0;
+                const bestPrice = Number(r.basic) || 0;
+                const discPct = listPrice > 0 ? Math.max(0, Math.round((1 - bestPrice / listPrice) * 100)) : 0;
+                return (
                 <tr key={r.sku}>
-                  <td style={{ border: '1px solid #94a3b8', padding: 4, textAlign: 'center' }}>{r.sr}</td>
-                  <td style={{ border: '1px solid #94a3b8', padding: 4 }}>
+                  <td style={{ width: '5%', border: '1px solid #94a3b8', padding: 4, textAlign: 'center' }}>{r.sr}</td>
+                  <td style={{ width: '32%', border: '1px solid #94a3b8', padding: 4, textAlign: 'left' }}>
                     <strong>{r.name}</strong>
                     <br />
-                    <span style={{ color: '#475569' }}>HSN: {r.hsn} · GST: {r.gst}</span>
+                    <span style={{ color: '#475569' }}>HSN: {r.hsn} | GST: {r.gst}</span>
                   </td>
-                  <td style={{ border: '1px solid #94a3b8', padding: 4, textAlign: 'center' }}>
-                    {r.brand} · {r.sku}
-                  </td>
-                  <td style={{ border: '1px solid #94a3b8', padding: 4, textAlign: 'center' }}>
-                    <PrintThumb item={r} />
-                  </td>
-                  <td style={{ border: '1px solid #94a3b8', padding: 4, textAlign: 'center' }}>Nos</td>
-                  <td style={{ border: '1px solid #94a3b8', padding: 4, textAlign: 'right' }}>{inr2.format(r.basic)}</td>
-                  <td style={{ border: '1px solid #94a3b8', padding: 4, textAlign: 'right' }}>{inr2.format(r.gstUnit)}</td>
-                  <td style={{ border: '1px solid #94a3b8', padding: 4, textAlign: 'right' }}>{inr2.format(r.incl)}</td>
-                  <td style={{ border: '1px solid #94a3b8', padding: 4, textAlign: 'center' }}>{r.qty}</td>
-                  <td style={{ border: '1px solid #94a3b8', padding: 4, textAlign: 'right', fontWeight: 700 }}>{inr2.format(r.lineTotal)}</td>
+                  <td style={{ width: '15%', border: '1px solid #94a3b8', padding: 4, textAlign: 'center' }}>{r.brand} | {r.sku}</td>
+                  <td style={{ width: '8%', border: '1px solid #94a3b8', padding: 4, textAlign: 'center' }}><PrintThumb item={r} /></td>
+                  <td style={{ width: '10%', border: '1px solid #94a3b8', padding: 4, textAlign: 'right' }}>{listPrice > 0 ? inr2.format(listPrice) : '-'}</td>
+                  <td style={{ width: '7%', border: '1px solid #94a3b8', padding: 4, textAlign: 'center' }}>{discPct > 0 ? discPct + '%' : '-'}</td>
+                  <td style={{ width: '11%', border: '1px solid #94a3b8', padding: 4, textAlign: 'right' }}>{inr2.format(bestPrice)}</td>
+                  <td style={{ width: '5%', border: '1px solid #94a3b8', padding: 4, textAlign: 'center' }}>{r.qty}</td>
+                  <td style={{ width: '12%', border: '1px solid #94a3b8', padding: 4, textAlign: 'right', fontWeight: 700 }}>{inr2.format(r.lineTotal)}</td>
                 </tr>
-              ))}
+                );
+              })}
               {printRows.length === 0 && (
                 <tr>
                   <td colSpan={9} style={{ border: '1px solid #94a3b8', padding: 12, textAlign: 'center' }}>
