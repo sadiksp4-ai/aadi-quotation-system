@@ -307,6 +307,10 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
     const json = XLSX.utils.sheet_to_json(ws, { defval: '' });
     if (!json.length) return;
     const headers = Object.keys(json[0]);
+    const ti = pickCol(headers, COL_KEYS.tag);
+    const dimi = pickCol(headers, COL_KEYS.dimension);
+    const techi = pickCol(headers, COL_KEYS.technical);
+    const areai = pickCol(headers, COL_KEYS.area);
     const di = pickCol(headers, COL_KEYS.description);
     const bi = pickCol(headers, COL_KEYS.brand);
     const qi = pickCol(headers, COL_KEYS.qty);
@@ -315,44 +319,66 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
     const pi = pickCol(headers, COL_KEYS.price);
     const gi = pickCol(headers, COL_KEYS.gst);
     const hi = pickCol(headers, COL_KEYS.hsn);
-    const ti = pickCol(headers, COL_KEYS.tag);
-    const dimi = pickCol(headers, COL_KEYS.dimension);
-    const techi = pickCol(headers, COL_KEYS.technical);
-    const areai = pickCol(headers, COL_KEYS.area);
-    const tagIdx = ti >= 0 ? ti : 0;
-    const dimIdx = dimi >= 0 ? dimi : (headers.length > 2 ? 2 : -1);
-    const techIdx = techi >= 0 ? techi : (headers.length > 5 ? 5 : -1);
-    const areaIdx = areai >= 0 ? areai : -1;
 
-    const parsed = json.map((row) => {
+    const tagIdx = ti >= 0 ? ti : 0;
+    const descIdx = di >= 0 ? di : 1;
+    const dimIdx = dimi >= 0 ? dimi : 2;
+    const qtyIdx = qi >= 0 ? qi : 3;
+    const brandIdx = bi >= 0 ? bi : 4;
+    const techIdx = techi >= 0 ? techi : 5;
+    const areaIdx = areai >= 0 ? areai : -1;
+    const unitIdx = ui >= 0 ? ui : -1;
+    const specIdx = si >= 0 ? si : -1;
+    const priceIdx = pi >= 0 ? pi : -1;
+    const gstIdx = gi >= 0 ? gi : -1;
+    const hsnIdx = hi >= 0 ? hi : -1;
+
+    let currentArea = '';
+    const parsed = [];
+    for (const row of json) {
       const arr = headers.map((h) => row[h]);
-      const desc = di >= 0 ? String(arr[di] || '').trim() : '';
-      const brand = bi >= 0 ? String(arr[bi] || '').trim() : '';
-      const qty = qi >= 0 ? Number(String(arr[qi]).replace(/[^0-9.]/g, '')) || 1 : 1;
-      const unit = ui >= 0 ? String(arr[ui] || '').trim() : '';
-      const spec = si >= 0 ? String(arr[si] || '').trim() : '';
-      const price = pi >= 0 ? Number(String(arr[pi]).replace(/[^0-9.]/g, '')) || 0 : 0;
-      const gst = gi >= 0 ? normalizeGst(arr[gi], '18%') : '18%';
-      const hsn = hi >= 0 ? String(arr[hi] || '').trim() : '';
-      const tag = tagIdx >= 0 && tagIdx !== di ? String(arr[tagIdx] || '').trim() : '';
-      const dimension = dimIdx >= 0 && dimIdx !== di ? String(arr[dimIdx] || '').trim() : '';
-      const technical = techIdx >= 0 && techIdx !== di ? String(arr[techIdx] || '').trim() : '';
-      const area = areaIdx >= 0 && areaIdx !== di ? String(arr[areaIdx] || '').trim() : '';
+      const desc = descIdx >= 0 ? String(arr[descIdx] || '').trim() : '';
+      const qty = qtyIdx >= 0 ? Number(String(arr[qtyIdx] || '').replace(/[^0-9.]/g, '')) || 0 : 0;
+      const price = priceIdx >= 0 ? Number(String(arr[priceIdx] || '').replace(/[^0-9.]/g, '')) || 0 : 0;
+
+      if (desc && !qty && !price && desc === desc.toUpperCase() && desc.length > 3) {
+        currentArea = desc;
+        continue;
+      }
+
+      const brand = brandIdx >= 0 && brandIdx !== descIdx ? String(arr[brandIdx] || '').trim() : '';
+      const unit = unitIdx >= 0 ? String(arr[unitIdx] || '').trim() : '';
+      const spec = specIdx >= 0 ? String(arr[specIdx] || '').trim() : '';
+      const gst = gstIdx >= 0 ? normalizeGst(arr[gstIdx], '18%') : '18%';
+      const hsn = hsnIdx >= 0 ? String(arr[hsnIdx] || '').trim() : '';
+      const tag = tagIdx >= 0 && tagIdx !== descIdx ? String(arr[tagIdx] || '').trim() : '';
+      let dimension = dimIdx >= 0 && dimIdx !== descIdx ? String(arr[dimIdx] || '').trim() : '';
+      let technical = techIdx >= 0 && techIdx !== descIdx ? String(arr[techIdx] || '').trim() : '';
+      const area = (areaIdx >= 0 && areaIdx !== descIdx ? String(arr[areaIdx] || '').trim() : '') || currentArea;
+
+      if (!dimension && technical) {
+        const capMatch = technical.match(/\b\d+(?:\.\d+)?\s*(?:KG|Kg|kg|LTR|Ltr|ltr|ML|ml|W|Watt|watt|mm|cm|inch|in)\b/i);
+        if (capMatch) dimension = capMatch[0].trim();
+      }
+
       const fullDesc = spec ? `${desc} (${spec})` : desc;
-      return baseRow({
-        description: fullDesc || desc,
-        brand,
-        qty: qty || 1,
-        unit,
-        unitPrice: price,
-        gst,
-        hsn,
-        clientTag: tag,
-        dimensionOrCapacity: dimension,
-        technicalSpec: technical,
-        areaCategory: area,
-      });
-    }).filter((r) => r.description);
+      if (!desc) continue;
+      parsed.push(
+        baseRow({
+          description: fullDesc || desc,
+          brand,
+          qty: qty || 1,
+          unit,
+          unitPrice: price,
+          gst,
+          hsn,
+          clientTag: tag,
+          dimensionOrCapacity: dimension,
+          technicalSpec: technical,
+          areaCategory: area,
+        }),
+      );
+    }
     setRows(parsed);
   };
 
@@ -649,7 +675,7 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
                       <input
                         value={r.dimensionOrCapacity}
                         onChange={(e) => updateRow(r.id, { dimensionOrCapacity: e.target.value })}
-                        placeholder="120 LTR / 1150x750x850"
+                        placeholder="e.g. 20 KG"
                         className="flex-1 rounded border border-slate-200 px-2 py-0.5 text-[10px] font-medium focus:border-slate-900 focus:outline-none"
                       />
                     </div>
