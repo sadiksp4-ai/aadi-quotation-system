@@ -66,7 +66,7 @@ input[type='range'].price-range::-moz-range-thumb {
   }
   @page {
     size: A4;
-    margin: 10mm 9mm 12mm 9mm;
+    margin: 8mm;
   }
   /* crisp borders + images in print preview / PDF */
   .ae-print,

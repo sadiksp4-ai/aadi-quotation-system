@@ -260,8 +260,8 @@ function numberToWordsIN(num) {
 }
 
 // margin / discount presets applied quote-wide on basic rates (before GST)
-const MARGIN_PRESETS = [-10, -5, 0, 5, 10, 15];
-const marginLabel = (p) => (p > 0 ? `+${p}%` : `${p}%`);
+const MARGIN_PRESETS = [0, 5, 10, 15, 20, 25];
+const marginLabel = (p) => `${p}%`;
 
 const DETAILS_KEY = 'quote-details';
 const AUTH_KEY = 'aadi_auth_user';
@@ -2199,7 +2199,7 @@ export default function App() {
   const itemCount = lineItems.reduce((s, i) => s + i.qty, 0);
   // quote-wide margin / discount applied on basic rates, before GST
   const marginPct = Number(details.marginPct) || 0;
-  const adjFactor = 1 + marginPct / 100;
+  const adjFactor = 1 - marginPct / 100;
   const adjBasicOf = (i) => (Number(i.sellingPrice) || 0) * adjFactor;
   const subtotal = lineItems.reduce((s, i) => s + adjBasicOf(i) * i.qty, 0);
   const gstTotal = lineItems.reduce(
@@ -2529,8 +2529,72 @@ export default function App() {
   return (
     <div className="min-h-screen">
       {/* ============ HEADER ============ */}
-<header className="no-print sticky top-0 z-40 h-16 px-6 bg-white border-b border-slate-200 flex items-center justify-between gap-4">
-      {/* Left: branding */}
+    <>
+      {/* Mobile header */}
+      <header className="no-print sticky top-0 z-40 md:hidden bg-white border-b border-slate-200 px-4 py-2 flex flex-col gap-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <img src={`${import.meta.env.BASE_URL}aadi-logo.png`} alt="Aadi Enterprises" className="h-7 w-auto object-contain" />
+            <span className="text-sm font-bold text-slate-900">Aadi Quote</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setDrawerOpen(true)}
+              className="flex h-8 items-center gap-1 rounded-full bg-slate-900 px-3 text-[12px] font-bold text-white"
+            >
+              🛒 {itemCount} items
+            </button>
+            <span
+              className={`flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br text-xs font-bold text-white ${
+                authUser?.name === 'Aditya'
+                  ? 'from-orange-500 to-amber-600'
+                  : authUser?.name === 'Abhijit'
+                  ? 'from-emerald-500 to-green-600'
+                  : 'from-slate-700 to-slate-900'
+              }`}
+            >
+              {String(authUser?.name || '?').charAt(0).toUpperCase()}
+            </span>
+          </div>
+        </div>
+        <div className="relative w-full">
+          <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            value={searchRaw}
+            onChange={(e) => setSearchRaw(e.target.value)}
+            placeholder="Search products, SKUs, HSN..."
+            className="w-full h-9 rounded-xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-xs font-medium focus:border-slate-900 focus:bg-white focus:outline-none"
+          />
+        </div>
+        <div className="flex gap-2 overflow-x-auto py-1 [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: 'none' }}>
+          <button
+            onClick={() => setBoqOpen(true)}
+            className="flex h-8 shrink-0 items-center gap-1 rounded-full bg-indigo-600 px-3 text-[12px] font-bold text-white"
+          >
+            📥 Import BOQ
+          </button>
+          <button
+            onClick={openAddModal}
+            className="flex h-8 shrink-0 items-center gap-1 rounded-full border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-700"
+          >
+            + Product
+          </button>
+          <button
+            onClick={() => setRecordsOpen(true)}
+            className="relative flex h-8 shrink-0 items-center gap-1 rounded-full border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-700"
+          >
+            📋 Records
+            {archive.length > 0 && (
+              <span className="ml-1 rounded-full bg-[#C8102E] px-1.5 text-[9px] font-extrabold text-white">
+                {archive.length}
+              </span>
+            )}
+          </button>
+        </div>
+      </header>
+
+      {/* Desktop header */}
+      <header className="no-print sticky top-0 z-40 hidden md:flex h-16 px-6 bg-white border-b border-slate-200 items-center justify-between gap-4">
       <div className="flex items-center gap-3 min-w-0">
         <img src={`${import.meta.env.BASE_URL}aadi-logo.png`} alt="Aadi Enterprises" className="h-9 w-auto shrink-0 object-contain" />
         <div className="min-w-0">
@@ -2541,8 +2605,6 @@ export default function App() {
           {catalog.length} products
         </span>
       </div>
-
-      {/* Center: search */}
       <div className="relative max-w-md w-full">
         <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
         <input
@@ -2564,8 +2626,6 @@ export default function App() {
           </button>
         )}
       </div>
-
-      {/* Right: actions + account */}
       <div className="flex items-center gap-2">
         <button
           onClick={() => setBoqOpen(true)}
@@ -2628,6 +2688,8 @@ export default function App() {
         </div>
       </div>
     </header>
+    </>
+
 
 
       {/* ============ BODY ============ */}
@@ -2710,7 +2772,7 @@ export default function App() {
             </div>
           ) : (
             <>
-              <p className="mb-3 text-[13px] font-medium text-slate-500">
+              <p className="mb-3 pt-2 text-[13px] font-medium text-slate-500">
                 Showing{' '}
                 <strong className="text-slate-800">
                   {Math.min(visible, filtered.length)}
@@ -2836,10 +2898,12 @@ export default function App() {
                           </p>
                           <p className="truncate whitespace-nowrap font-mono text-[11px] text-slate-500">
                             {i.sku} ·{' '}
-                            {marginPct !== 0 && (
-                              <s className="text-slate-400">{fmt(i.sellingPrice)} </s>
+                            {marginPct > 0 && (
+                              <s className="text-slate-400">List: {fmt(i.sellingPrice)} </s>
                             )}
-                            {fmt(adj)} +{i.gst}
+                            {marginPct > 0
+                              ? `Disc (${marginPct}%): ${fmt(adj)} + ${i.gst} GST`
+                              : `${fmt(adj)} +${i.gst} GST`}
                           </p>
                           <div className="mt-1.5 flex items-center gap-2">
                             <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-0.5">
@@ -3285,7 +3349,7 @@ export default function App() {
 
       {/* ============ PRINT-ONLY: AADI ENTERPRISES OFFICIAL QUOTATION (A4) ============ */}
       <div className="print-only">
-        <div className="ae-print" style={{ fontFamily: 'Arial, Helvetica, sans-serif', color: '#111827', fontSize: 11 }}>
+        <div className="ae-print w-full max-w-[210mm] mx-auto overflow-hidden text-slate-900 box-border" style={{ fontFamily: 'Arial, Helvetica, sans-serif', color: '#111827', fontSize: 11 }}>
           {/* Header */}
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, borderBottom: '3px solid #0f172a', paddingBottom: 10 }}>
             <div style={{ flex: '1 1 55%' }}>
@@ -3359,7 +3423,7 @@ export default function App() {
           </div>
 
           {/* Itemized table */}
-          <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 10, fontSize: 9.5 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 10, fontSize: 9.5, tableLayout: 'fixed', wordBreak: 'break-word' }}>
             <thead>
               <tr style={{ background: '#0f172a', color: '#fff' }}>
                 <th style={{ width: '5%', padding: '6px 4px', border: '1px solid #0f172a', fontSize: 9, textAlign: 'center' }}>Sr.</th>
@@ -3401,7 +3465,7 @@ export default function App() {
                   <td style={{ width: '15%', border: '1px solid #94a3b8', padding: 4, textAlign: 'center' }}>{r.brand} | {r.sku}</td>
                   <td style={{ width: '8%', border: '1px solid #94a3b8', padding: 4, textAlign: 'center' }}><PrintThumb item={r} /></td>
                   <td style={{ width: '10%', border: '1px solid #94a3b8', padding: 4, textAlign: 'right' }}>{listPrice > 0 ? inr2.format(listPrice) : '-'}</td>
-                  <td style={{ width: '7%', border: '1px solid #94a3b8', padding: 4, textAlign: 'center' }}>{discPct > 0 ? discPct + '%' : '-'}</td>
+                  <td style={{ width: '7%', border: '1px solid #94a3b8', padding: 4, textAlign: 'center' }}>${discPct}%</td>
                   <td style={{ width: '11%', border: '1px solid #94a3b8', padding: 4, textAlign: 'right' }}>{inr2.format(bestPrice)}</td>
                   <td style={{ width: '5%', border: '1px solid #94a3b8', padding: 4, textAlign: 'center' }}>{r.qty}</td>
                   <td style={{ width: '12%', border: '1px solid #94a3b8', padding: 4, textAlign: 'right', fontWeight: 700 }}>{inr2.format(r.lineTotal)}</td>
