@@ -2202,6 +2202,8 @@ export default function App() {
   const adjFactor = 1 - marginPct / 100;
   const adjBasicOf = (i) => (Number(i.sellingPrice) || 0) * adjFactor;
   const subtotal = lineItems.reduce((s, i) => s + adjBasicOf(i) * i.qty, 0);
+  const totalListPrice = lineItems.reduce((s, i) => s + (Number(i.sellingPrice) || 0) * i.qty, 0);
+  const totalDiscountAmount = Math.max(0, totalListPrice - subtotal);
   const gstTotal = lineItems.reduce(
     (s, i) => s + adjBasicOf(i) * i.qty * parseGstRate(i.gst),
     0,
@@ -3025,6 +3027,30 @@ export default function App() {
                       </div>
                     </div>
                   </div>
+                  <div className="mt-2 space-y-1 rounded-lg bg-white p-2 text-[12px]">
+                    <div className="flex justify-between text-slate-600">
+                      <span>Total List Price (MRP)</span>
+                      <span className="font-bold tabular-nums">{fmt(totalListPrice)}</span>
+                    </div>
+                    <div className="flex justify-between text-emerald-600 font-semibold">
+                      <span>Discount Applied ({marginPct}%)</span>
+                      <span className="tabular-nums">-{fmt(totalDiscountAmount)}</span>
+                    </div>
+                    <div className="flex justify-between text-slate-600">
+                      <span>Taxable Basic Value</span>
+                      <span className="font-bold tabular-nums">{fmt(subtotal)}</span>
+                    </div>
+                    <div className="flex justify-between text-slate-600">
+                      <span>{intraState ? 'CGST / SGST' : 'IGST'}</span>
+                      <span className="font-bold tabular-nums">
+                        {intraState ? `${inr2.format(cgst)} / ${inr2.format(sgst)}` : inr2.format(igst)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between border-t border-slate-200 pt-1 text-base font-extrabold">
+                      <span>Grand Total</span>
+                      <span className="tabular-nums">{inr2.format(grandTotal)}</span>
+                    </div>
+                  </div>
                   <dl className="flex flex-col gap-1 text-sm">
                     {marginPct !== 0 && (
                       <div className="flex justify-between text-[13px] text-slate-500">
@@ -3465,7 +3491,7 @@ export default function App() {
                   <td style={{ width: '15%', border: '1px solid #94a3b8', padding: 4, textAlign: 'center' }}>{r.brand} | {r.sku}</td>
                   <td style={{ width: '8%', border: '1px solid #94a3b8', padding: 4, textAlign: 'center' }}><PrintThumb item={r} /></td>
                   <td style={{ width: '10%', border: '1px solid #94a3b8', padding: 4, textAlign: 'right' }}>{listPrice > 0 ? inr2.format(listPrice) : '-'}</td>
-                  <td style={{ width: '7%', border: '1px solid #94a3b8', padding: 4, textAlign: 'center' }}>${discPct}%</td>
+                  <td style={{ width: '7%', border: '1px solid #94a3b8', padding: 4, textAlign: 'center' }}>{discPct > 0 ? `${discPct}%` : '-'}</td>
                   <td style={{ width: '11%', border: '1px solid #94a3b8', padding: 4, textAlign: 'right' }}>{inr2.format(bestPrice)}</td>
                   <td style={{ width: '5%', border: '1px solid #94a3b8', padding: 4, textAlign: 'center' }}>{r.qty}</td>
                   <td style={{ width: '12%', border: '1px solid #94a3b8', padding: 4, textAlign: 'right', fontWeight: 700 }}>{inr2.format(r.lineTotal)}</td>
