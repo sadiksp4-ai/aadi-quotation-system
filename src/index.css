@@ -112,3 +112,166 @@ input[type='range'].price-range::-moz-range-thumb {
 .animate-fade-in {
   animation: fade-in 0.2s ease-out;
 }
+
+/* ---------- Login: Modern Workspace + Liquid Glass ---------- */
+.login-page {
+  background:
+    radial-gradient(1100px 620px at 78% 8%, rgba(201, 166, 107, 0.16), transparent 62%),
+    radial-gradient(900px 600px at 18% 96%, rgba(37, 99, 235, 0.12), transparent 60%),
+    linear-gradient(135deg, #eef3f8 0%, #eaf0f6 48%, #e3eaf2 100%);
+  background-size: 160% 160%;
+  animation: login-bg-drift 26s ease-in-out infinite alternate;
+}
+
+@keyframes login-bg-drift {
+  0% {
+    background-position: 0% 40%;
+  }
+  100% {
+    background-position: 100% 60%;
+  }
+}
+
+.login-navy-aurora {
+  background:
+    radial-gradient(520px 420px at 22% 18%, rgba(53, 86, 128, 0.55), transparent 68%),
+    radial-gradient(560px 520px at 88% 78%, rgba(201, 166, 107, 0.18), transparent 66%),
+    linear-gradient(160deg, #14253d 0%, #0e1a2b 55%, #0a1421 100%);
+}
+
+.login-glass {
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.82) 0%,
+      rgba(255, 255, 255, 0.6) 46%,
+      rgba(255, 255, 255, 0.72) 100%
+    );
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  box-shadow:
+    0 28px 60px -28px rgba(16, 29, 51, 0.42),
+    0 10px 24px -18px rgba(16, 29, 51, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  backdrop-filter: blur(22px) saturate(150%);
+}
+
+/* Fallback for browsers without backdrop-filter */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .login-glass {
+    background: rgba(255, 255, 255, 0.94);
+  }
+  .login-glass-menu {
+    background: rgba(255, 255, 255, 0.98);
+  }
+}
+
+.login-glass-menu {
+  background:
+    linear-gradient(
+      160deg,
+      rgba(255, 255, 255, 0.94) 0%,
+      rgba(248, 251, 255, 0.88) 100%
+    );
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  box-shadow:
+    0 24px 48px -20px rgba(16, 29, 51, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  backdrop-filter: blur(24px) saturate(150%);
+}
+
+.login-aurora {
+  filter: blur(6px);
+  animation: login-aurora-float 18s ease-in-out infinite alternate;
+}
+
+.login-aurora-slow {
+  animation-duration: 26s;
+  animation-direction: alternate-reverse;
+}
+
+@keyframes login-aurora-float {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.75;
+  }
+  100% {
+    transform: translate3d(22px, -26px, 0) scale(1.08);
+    opacity: 1;
+  }
+}
+
+.login-card-in {
+  animation: login-card-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes login-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.login-dropdown-in {
+  transform-origin: top center;
+  animation: login-dropdown-in 0.18s ease-out both;
+}
+
+@keyframes login-dropdown-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.login-dropdown-up {
+  animation-name: login-dropdown-in-up;
+}
+
+@keyframes login-dropdown-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.login-field-in {
+  animation: login-field-in 0.22s ease-out both;
+}
+
+@keyframes login-field-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-page,
+  .login-aurora,
+  .login-card-in,
+  .login-dropdown-in,
+  .login-field-in {
+    animation: none !important;
+  }
+  .login-page {
+    background-position: 50% 50%;
+  }
+}

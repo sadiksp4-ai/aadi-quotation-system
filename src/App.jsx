@@ -8,8 +8,13 @@ import {
   Check,
   ChevronDown,
   Copy,
+  Eye,
+  EyeOff,
   FileText,
   Landmark,
+  Lock,
+  LogIn,
+  Loader2,
   MessageCircle,
   Minus,
   MoreHorizontal,
@@ -23,6 +28,7 @@ import {
   SlidersHorizontal,
   Trash2,
   UploadCloud,
+  User,
   X,
   ClipboardList,
   LogOut,
@@ -405,7 +411,8 @@ const ARCHIVE_KEY = 'aadi_quotations_archive';
 const AUTH_USERS = [
   {
     email: 'admin@aadienterprises.com',
-    password: 'aadi123',
+    passwordHash:
+      'c23cd600f553b666a87586dbdb03242cdb44bc7f28be5ebf542eede976afc26c',
     name: 'Admin',
     role: 'System Administrator',
     avatarBg: 'from-slate-700 to-slate-900',
@@ -413,7 +420,8 @@ const AUTH_USERS = [
   },
   {
     email: 'aditya@aadienterprises.com',
-    password: 'aditya123',
+    passwordHash:
+      '5585c75f1d5d1ea3adb2c9396af6a3b73653a7f944cf2662dd5a5f6170569856',
     name: 'Aditya',
     role: '',
     avatarBg: 'from-orange-500 to-amber-600',
@@ -421,13 +429,35 @@ const AUTH_USERS = [
   },
   {
     email: 'abhijit@aadienterprises.com',
-    password: 'abhijit123',
+    passwordHash:
+      'f381a4da85fcb2021d563d329f962e1185dafdce3089e7ba08cb372a8322ac1b',
     name: 'Abhijit',
     role: '',
     avatarBg: 'from-emerald-500 to-green-600',
     initial: 'A',
   },
 ];
+
+async function sha256Hex(text) {
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) throw new Error('Secure hashing is unavailable in this browser.');
+  const bytes = new TextEncoder().encode(String(text));
+  const digest = await subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+async function verifyPasswordHash(hash, input) {
+  if (!hash || !input) return false;
+  const candidate = await sha256Hex(input);
+  if (candidate.length !== hash.length) return false;
+  let diff = 0;
+  for (let i = 0; i < candidate.length; i += 1) {
+    diff |= candidate.charCodeAt(i) ^ hash.charCodeAt(i);
+  }
+  return diff === 0;
+}
 
 function loadAuthUser() {
   try {
@@ -1819,128 +1849,547 @@ function ProductCard({ product, qty, onAdd, onInc, onDec, onEdit, onDelete }) {
 }
 
 /* ---------------- login view ---------------- */
+
+function LoginArtwork() {
+  return (
+    <svg
+      viewBox="0 0 720 900"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      preserveAspectRatio="xMidYMid slice"
+      className="pointer-events-none absolute inset-0 h-full w-full"
+      aria-hidden="true"
+    >
+      <defs>
+        <linearGradient id="login-gold-line" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#C9A66B" stopOpacity="0.7" />
+          <stop offset="1" stopColor="#C9A66B" stopOpacity="0.12" />
+        </linearGradient>
+        <radialGradient id="login-navy-glow" cx="50%" cy="42%" r="58%">
+          <stop offset="0" stopColor="#2B4467" stopOpacity="0.55" />
+          <stop offset="1" stopColor="#0E1A2B" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+
+      <rect width="720" height="900" fill="url(#login-navy-glow)" />
+
+      {/* architectural curves */}
+      <g stroke="url(#login-gold-line)" strokeWidth="1.1" opacity="0.5">
+        <path d="M-70 720C90 470 300 430 470 620s230 200 350-20" />
+        <path d="M-40 770C120 520 320 480 500 660s220 190 340-10" opacity="0.65" />
+        <path d="M520-40c-50 170 20 300 200 370" />
+        <path d="M560-40c-50 160 10 280 180 340" opacity="0.55" />
+      </g>
+
+      {/* faint architectural uprights */}
+      <g stroke="#C9A66B" strokeWidth="0.7" opacity="0.16">
+        <path d="M120 0v900" />
+        <path d="M160 0v900" />
+        <path d="M600 0v900" />
+      </g>
+
+      {/* hotel luggage trolley */}
+      <g
+        stroke="#C9A66B"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        opacity="0.72"
+      >
+        <path d="M470 545v-70c0-12 10-22 22-22h26" />
+        <path d="M518 453h-7" />
+        <path d="M470 545h150v145" />
+        <path d="M500 545v145" />
+        <path d="M620 545v145" />
+        <path d="M500 690h120" />
+        <circle cx="500" cy="735" r="20" />
+        <circle cx="620" cy="735" r="20" />
+        <path d="M480 735h-12" />
+        <path d="M640 735h12" />
+        <rect x="492" y="500" width="106" height="45" rx="6" />
+        <path d="M492 520h106" />
+        <path d="M512 500v-10h20v10" />
+        <rect x="500" y="565" width="90" height="55" rx="6" />
+        <path d="M500 585h90" />
+        <path d="M522 565v-10h18v10" />
+        <path d="M535 620v14" />
+      </g>
+
+      {/* decorative indoor plant */}
+      <g stroke="#C9A66B" strokeWidth="1.2" strokeLinecap="round" opacity="0.42">
+        <path d="M110 790h54l-8 54h-38z" />
+        <path d="M137 790v-48" />
+        <path d="M137 755c-18-6-28-20-26-38 18 3 28 17 26 38z" />
+        <path d="M137 735c14-8 22-22 18-40-16 5-24 19-18 40z" />
+        <path d="M137 712c-12-8-16-22-10-36 14 7 18 21 10 36z" />
+      </g>
+
+      <g fill="#C9A66B" opacity="0.28">
+        <circle cx="80" cy="120" r="2" />
+        <circle cx="100" cy="140" r="1.5" />
+        <circle cx="640" cy="180" r="2" />
+      </g>
+    </svg>
+  );
+}
+
+function LoginAccountSelector({ selectedIndex, onSelect }) {
+  const [open, setOpen] = useState(false);
+  const [placement, setPlacement] = useState('down');
+  const [activeIndex, setActiveIndex] = useState(selectedIndex ?? 0);
+  const wrapRef = useRef(null);
+  const triggerRef = useRef(null);
+  const optionRefs = useRef([]);
+  const selectedUser =
+    selectedIndex === null || selectedIndex === undefined
+      ? null
+      : AUTH_USERS[selectedIndex];
+
+  const openMenu = () => {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (rect) {
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const spaceAbove = rect.top;
+      setPlacement(spaceBelow < 260 && spaceAbove > 220 ? 'up' : 'down');
+    }
+    setActiveIndex(selectedIndex ?? 0);
+    setOpen(true);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e) => {
+      if (!wrapRef.current?.contains(e.target)) setOpen(false);
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (open) setActiveIndex(selectedIndex ?? 0);
+  }, [open, selectedIndex]);
+
+  const focusOption = (index) => {
+    const next = (index + AUTH_USERS.length) % AUTH_USERS.length;
+    setActiveIndex(next);
+    optionRefs.current[next]?.focus();
+  };
+
+  const choose = (index) => {
+    onSelect(index);
+    setOpen(false);
+    setActiveIndex(index);
+    triggerRef.current?.focus();
+  };
+
+  const handleTriggerKeyDown = (e) => {
+    if (
+      !open &&
+      (e.key === 'ArrowDown' ||
+        e.key === 'ArrowUp' ||
+        e.key === 'Enter' ||
+        e.key === ' ')
+    ) {
+      e.preventDefault();
+      openMenu();
+      requestAnimationFrame(() =>
+        optionRefs.current[selectedIndex ?? 0]?.focus(),
+      );
+    }
+  };
+
+  const handleMenuKeyDown = (e) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      focusOption(activeIndex + 1);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      focusOption(activeIndex - 1);
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      focusOption(0);
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      focusOption(AUTH_USERS.length - 1);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setOpen(false);
+      triggerRef.current?.focus();
+    }
+  };
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={() => (open ? setOpen(false) : openMenu())}
+        onKeyDown={handleTriggerKeyDown}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls="login-account-list"
+        className={`flex w-full items-center gap-3 rounded-2xl border border-white/80 bg-white/55 px-3.5 py-2.5 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] backdrop-blur-md transition duration-200 hover:bg-white/70 focus:border-[#14253D]/35 focus:bg-white/75 focus:outline-none focus-visible:ring-4 focus-visible:ring-[#14253D]/10 ${
+          open ? 'border-[#14253D]/25 bg-white/75 ring-4 ring-[#14253D]/5' : ''
+        }`}
+      >
+        {selectedUser ? (
+          <>
+            <span
+              aria-hidden="true"
+              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br ${selectedUser.avatarBg} text-[13px] font-extrabold text-white shadow-sm`}
+            >
+              {selectedUser.initial}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13px] font-bold text-[#17263C]">
+                {selectedUser.name}
+              </span>
+              <span className="block truncate text-[11px] font-medium text-[#66758A]">
+                {selectedUser.role || selectedUser.email}
+              </span>
+            </span>
+          </>
+        ) : (
+          <>
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/80 bg-white/60 text-[#66758A]">
+              <User size={17} />
+            </span>
+            <span className="flex-1 text-[13px] font-semibold text-[#66758A]">
+              Select your account
+            </span>
+          </>
+        )}
+        <ChevronDown
+          size={16}
+          className={`shrink-0 text-[#66758A] transition-transform duration-200 ${
+            open ? 'rotate-180' : ''
+          }`}
+        />
+      </button>
+
+      {open && (
+        <div
+          id="login-account-list"
+          role="listbox"
+          aria-label="Select your account"
+          onKeyDown={handleMenuKeyDown}
+          className={`login-glass-menu login-dropdown-in absolute left-0 right-0 z-40 overflow-hidden rounded-2xl p-1.5 ${
+            placement === 'up'
+              ? 'login-dropdown-up bottom-full mb-2 origin-bottom'
+              : 'top-full mt-2 origin-top'
+          }`}
+        >
+          {AUTH_USERS.map((u, idx) => {
+            const active = selectedIndex === idx;
+            return (
+              <div key={u.email}>
+                {idx > 0 && <div className="mx-3 h-px bg-slate-200/70" />}
+                <button
+                  ref={(el) => {
+                    optionRefs.current[idx] = el;
+                  }}
+                  type="button"
+                  role="option"
+                  aria-selected={active}
+                  onClick={() => choose(idx)}
+                  onFocus={() => setActiveIndex(idx)}
+                  className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#14253D]/25 ${
+                    active
+                      ? 'bg-white/80 ring-1 ring-[#14253D]/10'
+                      : 'hover:bg-white/60'
+                  }`}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br ${u.avatarBg} text-sm font-extrabold text-white shadow-sm`}
+                  >
+                    {u.initial}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[13px] font-bold text-[#17263C]">
+                      {u.name}
+                    </span>
+                    <span className="block truncate text-[11px] font-medium text-[#66758A]">
+                      {u.role || u.email}
+                    </span>
+                  </span>
+                  {active && (
+                    <Check size={15} className="shrink-0 text-[#16A45B]" />
+                  )}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function LoginView({ onLogin }) {
-  const [selected, setSelected] = useState(0);
+  const [selected, setSelected] = useState(null);
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [showPass, setShowPass] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const passwordRef = useRef(null);
 
-  const user = AUTH_USERS[selected];
+  const user =
+    selected === null || selected === undefined ? null : AUTH_USERS[selected];
 
-  const submit = (e) => {
+  const selectAccount = (index) => {
+    setSelected(index);
+    setPassword('');
+    setError('');
+    setShowPass(false);
+    window.setTimeout(() => passwordRef.current?.focus(), 80);
+  };
+
+  const submit = async (e) => {
     e.preventDefault();
-    if (password === user.password) {
+    if (!user || !password.trim() || submitting) return;
+    setSubmitting(true);
+    setError('');
+    try {
+      const valid = await verifyPasswordHash(user.passwordHash, password);
+      if (!valid) {
+        setError('Invalid password. Please try again.');
+        setSubmitting(false);
+        return;
+      }
       onLogin({
         email: user.email,
         name: user.name,
         role: user.role,
       });
-    } else {
-      setError('Invalid password. Please try again.');
+    } catch (err) {
+      console.error('login error', err);
+      setError('Unable to sign in right now. Please try again.');
+      setSubmitting(false);
     }
   };
 
-  const autofill = () => {
-    setPassword(user.password);
-    setError('');
-  };
+  const canSubmit = Boolean(user && password.trim() && !submitting);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 p-4">
-      <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-pop sm:p-8">
-        <div className="mb-6 flex flex-col items-center text-center">
-          <img src={`${import.meta.env.BASE_URL}aadi-logo.png`} alt="Aadi Enterprises" className="mb-3 h-16 w-auto object-contain" />
-          <h1 className="text-xl font-extrabold text-slate-900">Aadi Enterprises</h1>
-          <p className="text-sm font-medium text-slate-500">Quotation System · Select your profile</p>
-        </div>
-
-        {/* profile cards */}
-        <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-          {AUTH_USERS.map((u, idx) => {
-            const active = selected === idx;
-            return (
-              <button
-                key={u.email}
-                type="button"
-                onClick={() => {
-                  setSelected(idx);
-                  setPassword('');
-                  setError('');
-                }}
-                className={`flex flex-col items-center gap-2 rounded-2xl border-2 p-4 transition ${
-                  active
-                    ? 'border-slate-900 bg-slate-50 shadow-md ring-2 ring-slate-900/20'
-                    : 'border-slate-200 bg-white hover:border-slate-400'
-                }`}
-              >
-                <span
-                  className={`flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br ${u.avatarBg} text-2xl font-extrabold text-white shadow-sm`}
-                >
-                  {u.initial}
-                </span>
-                <span className="text-[14px] font-extrabold text-slate-900">{u.name}</span>
-                {u.role && (
-                  <span className="text-[11px] font-medium text-slate-500">{u.role}</span>
-                )}
-                <span className="text-[10px] font-medium text-slate-400">{u.email}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* password for selected user */}
-        <form onSubmit={submit} className="flex flex-col gap-3">
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-            <p className="mb-2 text-center text-[13px] font-bold text-slate-700">
-              Signing in as {user.name}
-            </p>
-            <div className="relative">
-              <input
-                type={showPass ? 'text' : 'password'}
-                value={password}
-                onChange={(e) => {
-                  setPassword(e.target.value);
-                  setError('');
-                }}
-                placeholder="Enter password"
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 pr-20 text-sm font-medium focus:border-slate-900 focus:outline-none"
-                autoFocus
-              />
-              <button
-                type="button"
-                onClick={() => setShowPass((v) => !v)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg px-2 py-1 text-xs font-bold text-slate-500 hover:bg-slate-100"
-              >
-                {showPass ? 'Hide' : 'Show'}
-              </button>
-            </div>
-            {error && (
-              <p className="mt-2 flex items-center gap-1.5 text-[12px] font-semibold text-red-600">
-                <AlertCircle size={13} /> {error}
+    <div
+      className="login-page relative flex min-h-[100dvh] w-full flex-col overflow-x-hidden bg-[#EAF0F6] md:flex-row"
+      style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+    >
+      {/* LEFT PANEL — Modern Workspace */}
+      <aside className="relative hidden shrink-0 overflow-hidden bg-[#0E1A2B] md:flex md:w-[36%] lg:w-[40%] xl:w-[42%]">
+        <div className="login-navy-aurora absolute inset-0" />
+        <LoginArtwork />
+        <div className="relative z-10 flex h-full w-full flex-col justify-between p-7 lg:p-10 xl:p-14">
+          <div className="flex items-center gap-3">
+            <span
+              aria-hidden="true"
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-[#C9A66B]/50 text-[13px] font-extrabold tracking-wide text-[#C9A66B]"
+            >
+              AE
+            </span>
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-white/55">
+                Aadi Enterprises
               </p>
-            )}
+              <p className="mt-0.5 text-[10px] font-medium tracking-wide text-white/30">
+                Pune · Hospitality supply
+              </p>
+            </div>
           </div>
 
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <button
-              type="button"
-              onClick={autofill}
-              className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-[13px] font-bold text-slate-600 transition hover:border-slate-400 hover:text-slate-900"
-            >
-              Auto-fill password
-            </button>
-            <button
-              type="submit"
-              className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-slate-700 active:scale-[.98]"
-            >
-              <UserCircle size={16} /> Sign In
-            </button>
+          <div className="max-w-md">
+            <h1 className="text-3xl font-extrabold leading-[1.1] tracking-[-0.03em] text-white sm:text-4xl lg:text-[42px] xl:text-5xl">
+              Aadi Enterprises
+            </h1>
+            <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.32em] text-[#C9A66B]">
+              Quotation System
+            </p>
+            <div className="my-5 h-px w-20 bg-gradient-to-r from-[#C9A66B] to-transparent" />
+            <p className="max-w-sm text-sm leading-relaxed text-white/60 lg:text-[15px]">
+              Create, manage and share quotations for hospitality projects.
+            </p>
           </div>
 
-          <p className="text-center text-[11px] font-medium text-slate-400">
-            Hint: {user.name} password is “{user.password}”
+          <div className="flex items-center gap-2 text-[10.5px] font-medium uppercase tracking-[0.18em] text-white/30">
+            <span className="h-1.5 w-1.5 rounded-full bg-[#C9A66B]" />
+            Premium hospitality supply partner
+          </div>
+        </div>
+      </aside>
+
+      {/* RIGHT PANEL — Liquid Glass Login */}
+      <div className="relative flex min-h-[100dvh] w-full flex-col md:w-[64%] lg:w-[60%] xl:w-[58%]">
+        {/* compact mobile branding */}
+        <div className="relative overflow-hidden bg-[#0E1A2B] px-5 pb-9 pt-[max(1.5rem,env(safe-area-inset-top))] md:hidden">
+          <div className="absolute -right-10 -top-16 h-48 w-48 rounded-full border border-[#C9A66B]/20" />
+          <div className="absolute -right-4 -top-8 h-32 w-32 rounded-full border border-[#C9A66B]/15" />
+          <div className="relative flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/70 bg-white/95 shadow-sm">
+              <img
+                src={`${import.meta.env.BASE_URL}aadi-logo.png`}
+                alt="Aadi Enterprises"
+                className="h-8 w-auto object-contain"
+              />
+            </div>
+            <div>
+              <p className="text-[15px] font-extrabold text-white">
+                Aadi Enterprises
+              </p>
+              <p className="text-[11px] font-medium text-white/55">
+                Quotation System
+              </p>
+            </div>
+          </div>
+          <div className="mt-5 h-px w-14 bg-gradient-to-r from-[#C9A66B] to-transparent" />
+          <p className="mt-3 max-w-xs text-[12px] leading-relaxed text-white/55">
+            Create, manage and share quotations for hospitality projects.
           </p>
-        </form>
+        </div>
+
+        <main className="relative -mt-5 flex flex-1 items-start justify-center rounded-t-[28px] bg-[#EAF0F6] px-4 pb-8 pt-6 sm:px-6 sm:pt-8 md:mt-0 md:items-center md:rounded-none md:px-8 md:py-10 lg:px-12 xl:px-16">
+          <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-t-[28px] md:rounded-none">
+            <div
+              className="login-aurora absolute -left-24 top-10 h-[22rem] w-[22rem] rounded-full"
+              style={{
+                background:
+                  'radial-gradient(circle, rgba(37,99,235,.14), rgba(37,99,235,0) 68%)',
+              }}
+            />
+            <div
+              className="login-aurora login-aurora-slow absolute -right-24 bottom-0 h-[24rem] w-[24rem] rounded-full"
+              style={{
+                background:
+                  'radial-gradient(circle, rgba(201,166,107,.18), rgba(201,166,107,0) 68%)',
+              }}
+            />
+            <div
+              className="absolute inset-0 opacity-[0.35]"
+              style={{
+                backgroundImage:
+                  'linear-gradient(rgba(20,37,61,.04) 1px, transparent 1px), linear-gradient(90deg, rgba(20,37,61,.04) 1px, transparent 1px)',
+                backgroundSize: '42px 42px',
+              }}
+            />
+          </div>
+
+          <div className="login-glass login-card-in relative z-10 w-full max-w-md rounded-[28px] p-6 sm:p-8 lg:p-9">
+            <div className="flex flex-col items-center text-center">
+              <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-white/80 bg-white/85 shadow-[0_10px_24px_-16px_rgba(20,37,61,.45)]">
+                <img
+                  src={`${import.meta.env.BASE_URL}aadi-logo.png`}
+                  alt="Aadi Enterprises"
+                  className="h-12 w-auto object-contain"
+                />
+              </div>
+              <h1 className="text-[26px] font-extrabold leading-tight tracking-[-0.02em] text-[#17263C] sm:text-[28px]">
+                Quotation System
+              </h1>
+              <p className="mt-1.5 text-[13px] font-medium text-[#66758A] sm:text-sm">
+                Sign in to continue
+              </p>
+            </div>
+
+            <div className="mt-7">
+              <LoginAccountSelector
+                selectedIndex={selected}
+                onSelect={selectAccount}
+              />
+            </div>
+
+            {user && (
+              <form onSubmit={submit} className="login-field-in mt-4 space-y-4">
+                <div className="flex items-center gap-2 px-1 text-[11px] font-medium text-[#66758A]">
+                  <span className="h-1.5 w-1.5 rounded-full bg-[#16A45B]" />
+                  Signing in as{' '}
+                  <span className="font-bold text-[#17263C]">{user.name}</span>
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="login-password"
+                    className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.14em] text-[#66758A]"
+                  >
+                    Password
+                  </label>
+                  <div className="relative">
+                    <Lock
+                      size={17}
+                      className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[#66758A]"
+                    />
+                    <input
+                      id="login-password"
+                      ref={passwordRef}
+                      type={showPass ? 'text' : 'password'}
+                      value={password}
+                      onChange={(e) => {
+                        setPassword(e.target.value);
+                        setError('');
+                      }}
+                      placeholder="Enter password"
+                      autoComplete="current-password"
+                      aria-invalid={Boolean(error)}
+                      aria-describedby={error ? 'login-error' : undefined}
+                      className={`w-full rounded-2xl border bg-white/60 py-3 pl-11 pr-12 text-sm font-medium text-[#17263C] shadow-[inset_0_1px_0_rgba(255,255,255,.8)] placeholder:text-[#66758A]/60 focus:bg-white/80 focus:outline-none focus:ring-4 ${
+                        error
+                          ? 'border-rose-300 focus:border-rose-400 focus:ring-rose-100'
+                          : 'border-white/80 focus:border-[#14253D]/40 focus:ring-[#14253D]/10'
+                      }`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPass((v) => !v)}
+                      className="absolute right-2.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-xl text-[#66758A] transition duration-200 hover:bg-white/70 hover:text-[#17263C] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#14253D]/25"
+                      aria-label={showPass ? 'Hide password' : 'Show password'}
+                      aria-pressed={showPass}
+                    >
+                      {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                  {error && (
+                    <p
+                      id="login-error"
+                      role="alert"
+                      className="mt-2 flex items-center gap-1.5 text-[12px] font-semibold text-rose-600"
+                    >
+                      <AlertCircle size={13} /> {error}
+                    </p>
+                  )}
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={!canSubmit}
+                  className="group flex w-full items-center justify-center gap-2 rounded-2xl bg-[#14253D] px-4 py-3 text-sm font-bold text-white shadow-[0_14px_30px_-14px_rgba(20,37,61,.75)] transition duration-200 hover:bg-[#0E1A2B] hover:shadow-[0_18px_36px_-16px_rgba(20,37,61,.8)] active:scale-[.99] disabled:cursor-not-allowed disabled:bg-[#14253D]/45 disabled:shadow-none"
+                >
+                  {submitting ? (
+                    <Loader2 size={17} className="animate-spin" />
+                  ) : (
+                    <LogIn
+                      size={17}
+                      className="transition-transform duration-200 group-hover:translate-x-0.5"
+                    />
+                  )}
+                  {submitting ? 'Signing in…' : 'Sign In'}
+                </button>
+              </form>
+            )}
+
+            <p className="mt-6 text-center text-[10.5px] font-medium tracking-wide text-[#66758A]/75">
+              Authorised access only · Aadi Enterprises
+            </p>
+          </div>
+        </main>
       </div>
     </div>
   );
