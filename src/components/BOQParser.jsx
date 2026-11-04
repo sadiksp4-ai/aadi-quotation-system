@@ -243,6 +243,7 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
     contactPerson: '',
     designation: '',
     email: '',
+    defaultDiscount: '',
   });
 
   useEffect(() => {
@@ -479,6 +480,10 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
       gstin: newClient.gstin || '',
       shippingAddress: newClient.shippingAddress || newClient.address || '',
       stateCode: newClient.stateCode || '27',
+      defaultDiscount:
+        newClient.defaultDiscount === ''
+          ? null
+          : Math.min(100, Math.max(0, Number(newClient.defaultDiscount) || 0)),
     };
     if (onAddClient) {
       const id = await onAddClient(client);
@@ -497,6 +502,7 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
       contactPerson: '',
       designation: '',
       email: '',
+      defaultDiscount: '',
     });
   };
 
@@ -974,6 +980,11 @@ export default function BOQParser({ catalog = [], clients = [], onTransfer, onCl
               <label className="block sm:col-span-2">
                 <span className="mb-0.5 block text-[11px] font-bold uppercase tracking-wide text-slate-500">Email</span>
                 <input type="email" value={newClient.email} onChange={(e) => setNewClient((p) => ({ ...p, email: e.target.value }))} className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-[13px] font-medium focus:border-slate-900 focus:outline-none" />
+              </label>
+              <label className="block sm:col-span-2">
+                <span className="mb-0.5 block text-[11px] font-bold uppercase tracking-wide text-slate-500">Default Discount (%) — optional</span>
+                <input type="number" min={0} max={100} step="0.5" value={newClient.defaultDiscount} onChange={(e) => setNewClient((p) => ({ ...p, defaultDiscount: e.target.value }))} placeholder="e.g. 15" className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-[13px] font-medium tabular-nums focus:border-slate-900 focus:outline-none" />
+                <span className="mt-1 block text-[11px] text-slate-400">Auto-applied as the starting discount when this client is selected on a quote.</span>
               </label>
             </div>
             <div className="mt-4 flex justify-end gap-2">

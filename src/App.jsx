@@ -12,6 +12,7 @@ import {
   Landmark,
   MessageCircle,
   Minus,
+  MoreHorizontal,
   Package,
   Pencil,
   Plus,
@@ -184,6 +185,140 @@ function isIntraStateSupply(placeOfSupply, stateCode) {
   const sc = String(stateCode || '').trim();
   if (sc) return sc === '27' || /maharashtra/i.test(sc);
   return /maharashtra|27/i.test(String(placeOfSupply || ''));
+}
+
+/* ---------------- quotation lifecycle helpers ---------------- */
+
+const QUOTE_STATUSES = ['Draft', 'Sent', 'PO Received', 'Revised', 'Expired'];
+
+const QUOTE_STATUS_STYLES = {
+  Draft: 'border-slate-200 bg-slate-100 text-slate-700',
+  Sent: 'border-blue-200 bg-blue-100 text-blue-800',
+  'PO Received': 'border-emerald-200 bg-emerald-100 text-emerald-800',
+  Revised: 'border-amber-200 bg-amber-100 text-amber-800',
+  Expired: 'border-rose-200 bg-rose-100 text-rose-800',
+};
+
+const QUOTE_STATUS_TABS = [
+  { key: 'All', label: 'All', match: () => true },
+  {
+    key: 'Active',
+    label: 'Active / Sent',
+    match: (q) => ['Sent', 'Revised'].includes(normalizeQuoteStatus(q)),
+  },
+  {
+    key: 'PO Received',
+    label: 'PO Received',
+    match: (q) => normalizeQuoteStatus(q) === 'PO Received',
+  },
+  {
+    key: 'Drafts',
+    label: 'Drafts',
+    match: (q) => normalizeQuoteStatus(q) === 'Draft',
+  },
+];
+
+function normalizeQuoteStatus(quote) {
+  const raw = String(quote?.status || 'Draft').trim();
+  if (raw === 'Confirmed' || raw === 'Invoice Generated') return 'PO Received';
+  if (raw === 'Active') return 'Sent';
+  return QUOTE_STATUSES.includes(raw) ? raw : 'Draft';
+}
+
+function quoteMatchesStatusFilter(quote, filterKey) {
+  const tab = QUOTE_STATUS_TABS.find((t) => t.key === filterKey);
+  return tab ? tab.match(quote) : true;
+}
+
+function clientDefaultDiscount(client) {
+  const raw = client?.defaultDiscount;
+  if (raw === undefined || raw === null || raw === '') return 0;
+  const n = Number(raw);
+  return Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : 0;
+}
+
+function quoteTotals(quote) {
+  const items = Array.isArray(quote.items) ? quote.items : [];
+  const marginPct = Number(quote.marginPct) || 0;
+  const factor = 1 - marginPct / 100;
+  const calcSubtotal = items.reduce(
+    (s, i) => s + (Number(i.sellingPrice) || 0) * factor * (Number(i.qty) || 0),
+    0,
+  );
+  const calcGst = items.reduce(
+    (s, i) =>
+      s +
+      (Number(i.sellingPrice) || 0) *
+        factor *
+        (Number(i.qty) || 0) *
+        parseGstRate(i.gst),
+    0,
+  );
+  const subtotal =
+    quote.subtotal != null && Number.isFinite(Number(quote.subtotal))
+      ? Number(quote.subtotal)
+      : calcSubtotal;
+  const gstTotal =
+    quote.gstTotal != null && Number.isFinite(Number(quote.gstTotal))
+      ? Number(quote.gstTotal)
+      : calcGst;
+  const freight = Number(quote.freight) || 0;
+  const grandTotal =
+    quote.grandTotal != null && Number.isFinite(Number(quote.grandTotal))
+      ? Number(quote.grandTotal)
+      : subtotal + gstTotal + freight;
+  return {
+    items,
+    subtotal,
+    gstTotal,
+    freight,
+    grandTotal,
+    itemCount: items.reduce((s, i) => s + (Number(i.qty) || 0), 0),
+  };
+}
+
+function buildQuoteWhatsAppText(quote) {
+  const totals = quoteTotals(quote);
+  const marginPct = Number(quote.marginPct) || 0;
+  const factor = 1 - marginPct / 100;
+  const intraState = isIntraStateSupply(quote.placeOfSupply, quote.stateCode);
+  const lines = [
+    `*QUOTATION — ${COMPANY.name}*`,
+    `${COMPANY.tagline}, ${COMPANY.address} | ${COMPANY.phone}`,
+    `Quote No: ${quote.quoteNo || '—'} | Date: ${formatDateIN(quote.quoteDate) || '—'}`,
+    quote.clientName ? `To: ${quote.clientName}` : null,
+    quote.hotelName ? `Unit: ${quote.hotelName}` : null,
+    `Items: ${totals.itemCount}`,
+    '--------------------------------',
+  ];
+  totals.items.forEach((i, idx) => {
+    const rate = (Number(i.sellingPrice) || 0) * factor;
+    const lineTotal = rate * (Number(i.qty) || 0);
+    lines.push(`${idx + 1}. ${i.name || i.sku || 'Item'}`);
+    lines.push(
+      `    ${i.brand ? `${i.brand} · ` : ''}${i.sku || ''} | Qty: ${i.qty || 0} x ${fmt(rate)} = ${fmt(lineTotal)} (+${i.gst || '0%'} GST)`,
+    );
+  });
+  lines.push(
+    '--------------------------------',
+    `Basic Value: ${fmt(totals.subtotal)}`,
+    intraState
+      ? `CGST + SGST: ${inr2.format(totals.gstTotal)}`
+      : `IGST: ${inr2.format(totals.gstTotal)}`,
+  );
+  if (totals.freight > 0) lines.push(`Freight: ${fmt(totals.freight)}`);
+  lines.push(
+    `*Grand Total (incl. GST): ${inr2.format(totals.grandTotal)}*`,
+    '',
+    `Delivery: ${quote.delivery || '—'} | Payment: ${quote.payment || '—'} | Validity: ${quote.validity || '—'}`,
+    '',
+    '*Bank Details (ICICI Bank)*',
+    `A/C Name: ${COMPANY.bankName}`,
+    `A/C No: ${COMPANY.account}`,
+    `IFSC: ${COMPANY.ifsc}`,
+    `Branch: ${COMPANY.branch}`,
+  );
+  return lines.filter((l) => l !== null).join('\n');
 }
 
 // client initials for quotation numbering (e.g. JW, RC)
@@ -1062,6 +1197,179 @@ function ClientQuickSelect({ clients = [], onSelect, onClear }) {
   );
 }
 
+/* ---------------- quotation status badge + action menu ---------------- */
+
+function QuoteStatusSelect({ value, onChange }) {
+  const status = normalizeQuoteStatus({ status: value });
+  return (
+    <div
+      className={`relative inline-flex items-center rounded-full border ${QUOTE_STATUS_STYLES[status]}`}
+    >
+      <select
+        value={status}
+        onChange={(e) => onChange(e.target.value)}
+        className="cursor-pointer appearance-none bg-transparent py-0.5 pl-2 pr-6 text-[11px] font-extrabold focus:outline-none"
+        aria-label="Update quotation status"
+        title="Update quotation status"
+      >
+        {QUOTE_STATUSES.map((s) => (
+          <option key={s} value={s}>
+            {s}
+          </option>
+        ))}
+      </select>
+      <ChevronDown size={11} className="pointer-events-none absolute right-1.5" />
+    </div>
+  );
+}
+
+function QuoteActionMenu({
+  onLoad,
+  onPrint,
+  onDuplicate,
+  onWhatsApp,
+  onDelete,
+}) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const btnRef = useRef(null);
+  const menuRef = useRef(null);
+
+  const toggleMenu = () => {
+    if (!open && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect();
+      const width = 208;
+      const height = 260;
+      setPos({
+        top: Math.max(8, Math.min(r.bottom + 6, window.innerHeight - height - 8)),
+        left: Math.max(8, Math.min(r.right - width, window.innerWidth - width - 8)),
+      });
+    }
+    setOpen((v) => !v);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e) => {
+      if (
+        !menuRef.current?.contains(e.target) &&
+        !btnRef.current?.contains(e.target)
+      )
+        setOpen(false);
+    };
+    const onScroll = () => setOpen(false);
+    document.addEventListener('mousedown', onDown);
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onScroll);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onScroll);
+    };
+  }, [open]);
+
+  const item = (label, Icon, onClick, extra = '') => (
+    <button
+      key={label}
+      type="button"
+      onClick={() => {
+        setOpen(false);
+        onClick();
+      }}
+      className={`flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] font-bold text-slate-700 transition hover:bg-slate-50 ${extra}`}
+    >
+      <Icon size={14} /> {label}
+    </button>
+  );
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={toggleMenu}
+        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-700 transition hover:border-slate-400 hover:text-slate-900"
+        aria-haspopup="menu"
+        aria-expanded={open}
+      >
+        <MoreHorizontal size={14} />
+        Actions
+        <ChevronDown size={11} />
+      </button>
+      {open && (
+        <div
+          ref={menuRef}
+          role="menu"
+          style={{
+            position: 'fixed',
+            top: pos.top,
+            left: pos.left,
+            width: 208,
+            zIndex: 80,
+          }}
+          className="rounded-xl border border-slate-200 bg-white py-1 shadow-pop animate-fade-in"
+        >
+          {item('Load / Edit', Pencil, onLoad)}
+          {item('View / Print PDF', Printer, onPrint)}
+          {item('Duplicate / Revise', Copy, onDuplicate)}
+          {item(
+            'Send via WhatsApp',
+            MessageCircle,
+            onWhatsApp,
+            'text-emerald-700',
+          )}
+          <div className="my-1 border-t border-slate-100" />
+          {item('Delete', Trash2, onDelete, 'text-rose-600 hover:bg-rose-50')}
+        </div>
+      )}
+    </>
+  );
+}
+
+function ClientPricingMemory({ client, onSave }) {
+  const [value, setValue] = useState(client?.defaultDiscount ?? '');
+  useEffect(() => {
+    setValue(client?.defaultDiscount ?? '');
+  }, [client?.id, client?.defaultDiscount]);
+
+  if (!client) return null;
+
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-2">
+      <div className="min-w-0">
+        <p className="text-[11px] font-extrabold uppercase tracking-wide text-emerald-800">
+          Client pricing memory
+        </p>
+        <p className="truncate text-[11px] text-emerald-700">
+          Default discount auto-applies when selected
+        </p>
+      </div>
+      <div className="relative ml-auto w-20 shrink-0">
+        <input
+          type="number"
+          min={0}
+          max={100}
+          step="0.5"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          className="w-full rounded-lg border border-emerald-200 bg-white py-1 pl-2 pr-5 text-[12px] font-extrabold tabular-nums focus:border-emerald-600 focus:outline-none"
+          aria-label="Client default discount percent"
+        />
+        <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-[11px] font-bold text-emerald-600">
+          %
+        </span>
+      </div>
+      <button
+        type="button"
+        onClick={() => onSave(value)}
+        className="shrink-0 rounded-lg bg-emerald-600 px-2 py-1 text-[11px] font-bold text-white transition hover:bg-emerald-700"
+      >
+        Save
+      </button>
+    </div>
+  );
+}
+
 /* ---------------- quotation details accordion (drawer) ---------------- */
 
 function DetailField({ label, children }) {
@@ -1078,7 +1386,19 @@ function DetailField({ label, children }) {
 const detailInputCls =
   'w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] font-medium text-slate-800 focus:border-slate-900 focus:outline-none';
 
-function QuoteDetailsForm({ details, setDetail, open, onToggle, onReset, archive = [], clients = [] }) {
+function QuoteDetailsForm({
+  details,
+  setDetail,
+  open,
+  onToggle,
+  onReset,
+  archive = [],
+  clients = [],
+  selectedClient = null,
+  onClientSelect,
+  onClientClear,
+  onUpdateClientDiscount,
+}) {
   return (
     <div className="border-b border-slate-200 bg-slate-50">
       <button
@@ -1130,6 +1450,7 @@ function QuoteDetailsForm({ details, setDetail, open, onToggle, onReset, archive
                 }
                 return `${prefix}${String(max + 1).padStart(3, '0')}`;
               })());
+              onClientSelect?.(c);
             }}
             onClear={() => {
               setDetail('clientName', '');
@@ -1143,7 +1464,15 @@ function QuoteDetailsForm({ details, setDetail, open, onToggle, onReset, archive
               setDetail('clientGstin', '');
               setDetail('clientPan', '');
               setDetail('stateCode', '27');
+              onClientClear?.();
             }}
+          />
+
+          <ClientPricingMemory
+            client={selectedClient}
+            onSave={(value) =>
+              onUpdateClientDiscount?.(selectedClient?.id, value)
+            }
           />
 
           {/* Bill-to */}
@@ -1681,6 +2010,8 @@ export default function App() {
   const [currentQuoteId, setCurrentQuoteId] = useState(null);
   const [currentIsInvoice, setCurrentIsInvoice] = useState(false);
   const [statusFilter, setStatusFilter] = useState('All');
+  const [selectedClientId, setSelectedClientId] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
   const showToast = (msg) => {
     setToast(msg);
@@ -1812,6 +2143,35 @@ export default function App() {
   const setDetail = (key, value) =>
     setDetails((d) => ({ ...d, [key]: value }));
 
+  const selectedClient = useMemo(
+    () =>
+      clients.find((c) => String(c.id) === String(selectedClientId)) || null,
+    [clients, selectedClientId],
+  );
+
+  const applyClientSelection = (client) => {
+    setSelectedClientId(client?.id ?? null);
+    setDetail('marginPct', clientDefaultDiscount(client));
+  };
+
+  const clearClientSelection = () => {
+    setSelectedClientId(null);
+    setDetail('marginPct', 0);
+  };
+
+  const recordList = useMemo(
+    () => archive.filter((q) => quoteMatchesStatusFilter(q, statusFilter)),
+    [archive, statusFilter],
+  );
+
+  const statusCounts = useMemo(() => {
+    const counts = {};
+    for (const tab of QUOTE_STATUS_TABS) {
+      counts[tab.key] = archive.filter(tab.match).length;
+    }
+    return counts;
+  }, [archive]);
+
   const DETAIL_KEYS = [
     'clientName',
     'hotelName',
@@ -1841,8 +2201,7 @@ export default function App() {
     const id = existing ? existing.id : `q_${Date.now()}`;
     const status =
       statusOverride ||
-      existing?.status ||
-      'Draft';
+      (existing ? normalizeQuoteStatus(existing) : 'Draft');
     const quote = {
       id,
       quoteNo: details.quoteNo,
@@ -1855,6 +2214,7 @@ export default function App() {
       stateCode: details.stateCode,
       contactPerson: details.contactPerson,
       designation: details.designation,
+      contactPhone: details.contactPhone,
       contactEmail: details.contactEmail,
       quoteDate: details.quoteDate,
       delivery: details.delivery,
@@ -1905,6 +2265,13 @@ export default function App() {
       if (q[k] !== undefined) newDetails[k] = q[k];
     }
     setDetails(newDetails);
+    const matchedClient = clients.find(
+      (c) =>
+        (q.clientName &&
+          [c.legalEntity, c.accountName].filter(Boolean).includes(q.clientName)) ||
+        (q.hotelName && c.propertyName === q.hotelName),
+    );
+    setSelectedClientId(matchedClient ? matchedClient.id : null);
     const newCart = {};
     const newSpecs = {};
     for (const item of q.items || []) {
@@ -1935,16 +2302,89 @@ export default function App() {
     showToast(`Quote marked as ${status}`);
   };
 
+  const requestDeleteQuote = (q) => setDeleteTarget(q);
+
   const deleteQuote = (id) => {
-    if (
-      !window.confirm('Delete this quotation record? This cannot be undone.')
-    )
-      return;
     deleteDoc(doc(db, 'quotations', id)).catch((err) =>
       console.error('delete quote error', err),
     );
     if (currentQuoteId === id) setCurrentQuoteId(null);
     showToast('Quote deleted');
+  };
+
+  const confirmDeleteQuote = () => {
+    if (!deleteTarget) return;
+    deleteQuote(deleteTarget.id);
+    setDeleteTarget(null);
+  };
+
+  const duplicateQuote = (q) => {
+    const base = String(q.quoteNo || 'AE/QTN/2026-001').replace(
+      /-R\d+\s*$/i,
+      '',
+    );
+    let maxRevision = 0;
+    for (const item of archive) {
+      const qn = String(item.quoteNo || '');
+      if (qn === base) maxRevision = Math.max(maxRevision, 0);
+      if (qn.startsWith(`${base}-R`)) {
+        const n = Number(qn.slice(base.length + 2).trim());
+        if (Number.isFinite(n)) maxRevision = Math.max(maxRevision, n);
+      }
+    }
+    const quoteNo = `${base}-R${maxRevision + 1}`;
+    const now = new Date().toISOString();
+    const copy = {
+      ...q,
+      id: `q_${Date.now()}`,
+      quoteNo,
+      status: 'Draft',
+      isInvoice: false,
+      revisionOf: base,
+      createdBy: authUser?.name || q.createdBy || '',
+      createdAt: now,
+      updatedAt: now,
+      timestamp: now,
+    };
+    setDoc(doc(db, 'quotations', copy.id), copy).catch((err) =>
+      console.error('duplicate quote error', err),
+    );
+    loadQuote(copy);
+    showToast(`Revision ${quoteNo} created as draft`);
+  };
+
+  const sendQuoteWhatsApp = (q) => {
+    const text = buildQuoteWhatsAppText(q);
+    const digits = String(q.contactPhone || '').replace(/\D/g, '');
+    const phone = digits.length === 10 ? `91${digits}` : digits;
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+    showToast('Opening WhatsApp with quotation summary');
+  };
+
+  const updateClientDefaultDiscount = async (id, raw) => {
+    if (id === undefined || id === null) return;
+    const client = clients.find((c) => String(c.id) === String(id));
+    if (!client) return;
+    const n =
+      raw === '' || raw === null || raw === undefined
+        ? null
+        : Math.min(100, Math.max(0, Number(raw) || 0));
+    const next = { ...client, defaultDiscount: n };
+    setClients((prev) =>
+      prev.map((c) => (String(c.id) === String(id) ? next : c)),
+    );
+    try {
+      await setDoc(doc(db, 'clients', String(id)), next, { merge: true });
+      showToast(
+        n === null
+          ? 'Client default discount cleared'
+          : `Client default discount set to ${n}%`,
+      );
+    } catch (err) {
+      console.error('save client default discount error', err);
+      showToast('Could not save client default discount');
+    }
   };
 
   const convertToInvoice = (q) => {
@@ -2076,6 +2516,8 @@ export default function App() {
         setDetail('contactPhone', c.phone || '');
         setDetail('contactEmail', c.email || '');
         setDetail('placeOfSupply', c.placeOfSupply || details.placeOfSupply);
+        setDetail('marginPct', clientDefaultDiscount(c));
+        setSelectedClientId(c.id);
       }
     }
     setBoqOpen(false);
@@ -2936,10 +3378,15 @@ export default function App() {
                 onToggle={() => setDetailsOpen((v) => !v)}
                 onReset={() => {
                   setDetails({ ...DEFAULT_DETAILS });
+                  setSelectedClientId(null);
                   showToast('Details reset to defaults');
                 }}
                 archive={archive}
                 clients={clients}
+                selectedClient={selectedClient}
+                onClientSelect={applyClientSelection}
+                onClientClear={clearClientSelection}
+                onUpdateClientDiscount={updateClientDefaultDiscount}
               />
 
               {lineItems.length === 0 ? (
@@ -3031,6 +3478,7 @@ export default function App() {
                       setItemSpecs({});
                       setCurrentQuoteId(null);
                       setCurrentIsInvoice(false);
+                      setSelectedClientId(null);
                       showToast('Quote cleared');
                     }}
                     className="mt-3 flex items-center gap-1 text-xs font-bold text-slate-400 hover:text-red-600"
@@ -3221,35 +3669,22 @@ export default function App() {
 
             {/* status filter tabs */}
             <div className="flex flex-shrink-0 flex-wrap gap-1 border-b border-slate-200 px-4 py-2">
-              {['All', 'Draft', 'Sent', 'Confirmed', 'Invoices'].map((s) => {
-                const count =
-                  s === 'All'
-                    ? archive.length
-                    : s === 'Invoices'
-                    ? archive.filter((q) => q.isInvoice).length
-                    : archive.filter((q) => q.status === s).length;
-                const label =
-                  s === 'All'
-                    ? 'All'
-                    : s === 'Draft'
-                    ? 'Drafts'
-                    : s === 'Invoices'
-                    ? 'Tax Invoices'
-                    : s;
+              {QUOTE_STATUS_TABS.map((tab) => {
+                const count = statusCounts[tab.key] || 0;
                 return (
                   <button
-                    key={s}
-                    onClick={() => setStatusFilter(s)}
+                    key={tab.key}
+                    onClick={() => setStatusFilter(tab.key)}
                     className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-bold transition ${
-                      statusFilter === s
+                      statusFilter === tab.key
                         ? 'bg-slate-900 text-white'
                         : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                     }`}
                   >
-                    {label}
+                    {tab.label}
                     <span
                       className={`rounded-full px-1.5 text-[10px] font-extrabold tabular-nums ${
-                        statusFilter === s ? 'bg-white/20' : 'bg-white'
+                        statusFilter === tab.key ? 'bg-white/20' : 'bg-white'
                       }`}
                     >
                       {count}
@@ -3260,13 +3695,7 @@ export default function App() {
             </div>
 
             <div className="min-h-0 flex-1 overflow-auto nice-scroll">
-              {archive.filter(
-                (q) =>
-                  statusFilter === 'All' ||
-                  (statusFilter === 'Invoices'
-                    ? q.isInvoice
-                    : q.status === statusFilter),
-              ).length === 0 ? (
+              {recordList.length === 0 ? (
                 <div className="flex flex-col items-center justify-center gap-2 p-12 text-center">
                   <ClipboardList size={40} className="text-slate-200" />
                   <p className="font-bold text-slate-700">No quotations found</p>
@@ -3288,117 +3717,110 @@ export default function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {archive
-                      .filter(
-                        (q) =>
-                          statusFilter === 'All' ||
-                          (statusFilter === 'Invoices'
-                            ? q.isInvoice
-                            : q.status === statusFilter),
-                      )
-                      .map((q) => {
-                        const status = q.status || 'Draft';
-                        const badgeCls = q.isInvoice
-                          ? 'bg-purple-100 text-purple-800'
-                          : status === 'Confirmed'
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : status === 'Sent'
-                          ? 'bg-blue-100 text-blue-800'
-                          : 'bg-amber-100 text-amber-800';
-                        return (
-                          <tr
-                            key={q.id}
-                            className="border-t border-slate-100 hover:bg-slate-50/60"
-                          >
-                            <td className="px-3 py-2 font-mono text-[12px] font-bold">
-                              {q.quoteNo}
-                            </td>
-                            <td className="px-3 py-2">
-                              <div className="font-bold text-slate-800">
-                                {q.clientName || '—'}
-                              </div>
-                              <div className="text-[11px] text-slate-500">
-                                {q.hotelName}
-                              </div>
-                            </td>
-                            <td className="px-3 py-2 text-center tabular-nums">
-                              {q.itemCount ?? q.items?.length ?? 0}
-                            </td>
-                            <td className="px-3 py-2 text-right font-bold tabular-nums">
-                              {inr2.format(q.grandTotal || 0)}
-                            </td>
-                            <td className="px-3 py-2 text-[11px] text-slate-500">
-                              {formatDateIN(q.quoteDate)}
-                              <br />
-                              {q.timestamp
-                                ? new Date(q.timestamp).toLocaleString('en-IN')
-                                : ''}
-                            </td>
-                            <td className="px-3 py-2">
-                              <span
-                                className={`rounded-full px-2 py-0.5 text-[11px] font-extrabold ${badgeCls}`}
-                              >
-                                {status}
-                              </span>
-                            </td>
-                            <td className="px-3 py-2">
-                              <div className="flex flex-wrap gap-1">
-                                <button
-                                  onClick={() => loadQuote(q)}
-                                  className="rounded-lg bg-slate-900 px-2 py-1 text-[11px] font-bold text-white hover:bg-slate-700"
-                                >
-                                  Load / Edit
-                                </button>
-                                <button
-                                  onClick={() => reprintQuote(q)}
-                                  className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-700 hover:border-slate-400"
-                                >
-                                  Re-print PDF
-                                </button>
-                                {status === 'Draft' && (
-                                  <button
-                                    onClick={() =>
-                                      updateQuoteStatus(q.id, 'Sent')
-                                    }
-                                    className="rounded-lg bg-blue-600 px-2 py-1 text-[11px] font-bold text-white hover:bg-blue-700"
-                                  >
-                                    Mark as Sent
-                                  </button>
-                                )}
-                                {status === 'Sent' && (
-                                  <button
-                                    onClick={() =>
-                                      updateQuoteStatus(q.id, 'Confirmed')
-                                    }
-                                    className="rounded-lg bg-emerald-600 px-2 py-1 text-[11px] font-bold text-white hover:bg-emerald-700"
-                                  >
-                                    Mark as Confirmed
-                                  </button>
-                                )}
-                                {status === 'Confirmed' && !q.isInvoice && (
-                                  <button
-                                    onClick={() => convertToInvoice(q)}
-                                    className="rounded-lg bg-emerald-600 px-2 py-1 text-[11px] font-bold text-white hover:bg-emerald-700"
-                                  >
-                                    Convert to Invoice
-                                  </button>
-                                )}
-                                <button
-                                  onClick={() => deleteQuote(q.id)}
-                                  className="rounded-lg border border-red-200 bg-white px-2 py-1 text-[11px] font-bold text-red-600 hover:bg-red-50"
-                                >
-                                  Delete
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
+                    {recordList.map((q) => {
+                      const status = normalizeQuoteStatus(q);
+                      return (
+                        <tr
+                          key={q.id}
+                          className="border-t border-slate-100 hover:bg-slate-50/60"
+                        >
+                          <td className="px-3 py-2 font-mono text-[12px] font-bold">
+                            {q.quoteNo}
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="font-bold text-slate-800">
+                              {q.clientName || '—'}
+                            </div>
+                            <div className="text-[11px] text-slate-500">
+                              {q.hotelName}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 text-center tabular-nums">
+                            {q.itemCount ?? q.items?.length ?? 0}
+                          </td>
+                          <td className="px-3 py-2 text-right font-bold tabular-nums">
+                            {inr2.format(q.grandTotal || 0)}
+                          </td>
+                          <td className="px-3 py-2 text-[11px] text-slate-500">
+                            {formatDateIN(q.quoteDate)}
+                            <br />
+                            {q.timestamp
+                              ? new Date(q.timestamp).toLocaleString('en-IN')
+                              : ''}
+                          </td>
+                          <td className="px-3 py-2">
+                            <QuoteStatusSelect
+                              value={status}
+                              onChange={(next) =>
+                                updateQuoteStatus(q.id, next)
+                              }
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <QuoteActionMenu
+                              onLoad={() => loadQuote(q)}
+                              onPrint={() => reprintQuote(q)}
+                              onDuplicate={() => duplicateQuote(q)}
+                              onWhatsApp={() => sendQuoteWhatsApp(q)}
+                              onDelete={() => requestDeleteQuote(q)}
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               )}
             </div>
           </aside>
+        </div>
+      )}
+
+      {/* ============ DELETE QUOTATION CONFIRMATION MODAL ============ */}
+      {deleteTarget && (
+        <div className="no-print fixed inset-0 z-[90] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-slate-900/60 animate-fade-in"
+            onClick={() => setDeleteTarget(null)}
+          />
+          <div className="relative w-full max-w-sm rounded-2xl bg-white p-5 shadow-pop animate-fade-in">
+            <div className="mb-2 flex items-center gap-2 text-rose-600">
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-rose-100">
+                <Trash2 size={16} />
+              </span>
+              <h2 className="text-[15px] font-extrabold">Delete quotation?</h2>
+            </div>
+            <p className="text-[13px] leading-relaxed text-slate-600">
+              Delete{' '}
+              <strong className="font-mono text-slate-900">
+                {deleteTarget.quoteNo || 'this quotation'}
+              </strong>
+              {deleteTarget.clientName ? (
+                <>
+                  {' '}
+                  for{' '}
+                  <strong className="text-slate-900">
+                    {deleteTarget.clientName}
+                  </strong>
+                </>
+              ) : null}
+              ? This cannot be undone.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setDeleteTarget(null)}
+                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-[13px] font-bold text-slate-600 transition hover:border-slate-400"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteQuote}
+                className="rounded-lg bg-rose-600 px-4 py-2 text-[13px] font-bold text-white transition hover:bg-rose-700"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
