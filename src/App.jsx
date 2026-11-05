@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   ArrowDownWideNarrow,
+  ArrowRight,
   ArrowUpNarrowWide,
   Building2,
   CalendarDays,
@@ -10,8 +11,9 @@ import {
   Copy,
   Eye,
   EyeOff,
-  FileText,
   Landmark,
+  LayoutGrid,
+  List,
   Lock,
   LogIn,
   Loader2,
@@ -19,6 +21,7 @@ import {
   Minus,
   MoreHorizontal,
   Package,
+  PackageSearch,
   Pencil,
   Plus,
   Printer,
@@ -26,6 +29,7 @@ import {
   Search,
   ShoppingCart,
   SlidersHorizontal,
+  Tag,
   Trash2,
   UploadCloud,
   User,
@@ -33,7 +37,6 @@ import {
   ClipboardList,
   LogOut,
   UserCircle,
-  Archive,
   CheckCircle2,
 } from 'lucide-react';
 import rawProducts from './data/products.json';
@@ -125,16 +128,11 @@ async function copyText(text) {
   }
 }
 
-const BRAND_STYLE = {
-  Tramontina: 'bg-[#C8102E] text-white',
-  Dolphy: 'bg-[#1B2A4A] text-white',
-  'Kärcher': 'bg-[#FFD200] text-black',
-};
-
-const ACTIVE_PILL = {
-  Tramontina: 'border-[#C8102E] bg-[#C8102E] text-white shadow-sm',
-  Dolphy: 'border-[#1B2A4A] bg-[#1B2A4A] text-white shadow-sm',
-  'Kärcher': 'border-[#CA8A04] bg-[#FFD200] text-black shadow-sm',
+const BRAND_ACCENT = {
+  Tramontina: '#C8102E',
+  Dolphy: '#1B2A4A',
+  'Kärcher': '#D4A600',
+  Frontier: '#0F766E',
 };
 
 const BRAND_AVATAR_BG = {
@@ -142,6 +140,12 @@ const BRAND_AVATAR_BG = {
   Dolphy: 'bg-[#1B2A4A]',
   'Kärcher': 'bg-[#EAB308]',
 };
+
+const SORT_OPTIONS = [
+  { value: 'relevance', label: 'Recommended', hint: 'Popular first' },
+  { value: 'low-high', label: 'Price: Low to High', hint: 'Best value' },
+  { value: 'high-low', label: 'Price: High to Low', hint: 'Premium first' },
+];
 
 /* ---------------- AADI ENTERPRISES company profile ---------------- */
 
@@ -1041,33 +1045,28 @@ function ProductImage({ product, size = 'md' }) {
   const [failed, setFailed] = useState(!product.image);
   useEffect(() => setFailed(!product.image), [product.sku, product.image]);
 
-  const dims =
-    size === 'sm'
-      ? 'h-14 w-14 rounded-lg text-sm'
-      : 'h-full w-full text-3xl';
-
   if (failed) {
     const avatarBg = BRAND_AVATAR_BG[product.brand] || 'bg-slate-800';
     const avatarText = product.brand === 'Kärcher' ? 'text-black' : 'text-white';
-    const wash =
-      product.brand === 'Tramontina'
-        ? 'from-rose-50 to-rose-100'
-        : product.brand === 'Kärcher'
-          ? 'from-yellow-50 to-yellow-100'
-          : 'from-slate-100 to-slate-200';
     return (
       <div
-        className={`flex ${dims} flex-col items-center justify-center gap-1.5 bg-gradient-to-br ${wash} p-2 text-center`}
-        aria-label={`${product.brand} placeholder`}
+        className={`flex h-full w-full flex-col items-center justify-center gap-2 bg-gradient-to-br from-white via-slate-50 to-slate-100 p-2 text-center ${
+          size === 'sm' ? 'rounded-lg' : ''
+        }`}
+        aria-label={`${product.brand} product image unavailable`}
       >
         <span
-          className={`flex h-11 w-11 items-center justify-center rounded-full font-extrabold tracking-wide shadow-sm ${avatarBg} ${avatarText}`}
+          className={`flex items-center justify-center rounded-full font-extrabold tracking-wide shadow-sm ${avatarBg} ${avatarText} ${
+            size === 'sm' ? 'h-8 w-8 text-[10px]' : 'h-12 w-12 text-[13px]'
+          }`}
         >
           {brandInitials(product.brand)}
         </span>
-        <span className="max-w-full truncate rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600 shadow-sm">
-          {product.category}
-        </span>
+        {size !== 'sm' && (
+          <span className="max-w-full truncate rounded-full border border-line/80 bg-white/90 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+            {product.category || 'Product'}
+          </span>
+        )}
       </div>
     );
   }
@@ -1077,8 +1076,14 @@ function ProductImage({ product, size = 'md' }) {
       src={product.image}
       alt={product.name}
       loading="lazy"
+      decoding="async"
+      draggable={false}
       onError={() => setFailed(true)}
-      className={`${size === 'sm' ? 'h-14 w-14 rounded-lg border border-slate-200 object-contain bg-white p-2' : 'h-full w-full object-contain bg-white p-2 transition-transform duration-200 group-hover:scale-[1.04]'}`}
+      className={
+        size === 'sm'
+          ? 'h-full w-full rounded-lg bg-white object-contain p-1'
+          : 'product-card-image h-full w-full bg-transparent object-contain p-3 sm:p-4'
+      }
     />
   );
 }
@@ -1687,163 +1692,370 @@ function QuoteDetailsForm({
   );
 }
 
-/* ---------------- product card ---------------- */
+/* ---------------- product catalogue card ---------------- */
 
-function ProductCard({ product, qty, onAdd, onInc, onDec, onEdit, onDelete }) {
+function SkuBadge({ sku, className = '' }) {
   const [copied, setCopied] = useState(false);
-  const [inputQty, setInputQty] = useState(qty > 0 ? qty : 1);
-  useEffect(() => {
-    if (qty > 0) setInputQty(qty);
-  }, [qty]);
-  const discount =
-    product.mrp > product.sellingPrice
-      ? Math.round((1 - product.sellingPrice / product.mrp) * 100)
-      : 0;
-
   const handleCopy = async () => {
-    const ok = await copyText(product.sku);
+    const ok = await copyText(sku);
     if (ok) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1400);
     }
   };
+  return (
+    <span className={`flex min-w-0 items-center gap-1 ${className}`}>
+      <span className="truncate font-mono text-[11px] font-semibold tracking-tight text-slate-500">
+        {sku}
+      </span>
+      <button
+        type="button"
+        onClick={handleCopy}
+        title={copied ? 'SKU copied' : 'Copy SKU'}
+        aria-label={copied ? `SKU ${sku} copied` : `Copy SKU ${sku}`}
+        className="shrink-0 rounded p-0.5 text-slate-300 transition hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aadi/40"
+      >
+        {copied ? (
+          <Check size={12} className="text-aadigreen" />
+        ) : (
+          <Copy size={12} />
+        )}
+      </button>
+    </span>
+  );
+}
+
+function QuoteControls({ qty, inputQty, setInputQty, onAdd, onInc, onDec }) {
+  if (qty > 0) {
+    return (
+      <div className="mt-1">
+        <div className="flex h-10 items-center justify-between gap-1 rounded-xl border border-aadigreen/25 bg-aadigreen/[0.07] px-1">
+          <button
+            type="button"
+            onClick={onDec}
+            aria-label="Decrease quantity"
+            className="flex h-8 w-9 items-center justify-center rounded-lg bg-white text-ink-deep shadow-sm ring-1 ring-inset ring-line transition hover:bg-slate-100 active:scale-95"
+          >
+            <Minus size={15} />
+          </button>
+          <span
+            className="flex min-w-0 flex-col items-center leading-none"
+            aria-live="polite"
+          >
+            <span className="text-sm font-extrabold tabular-nums text-ink-deep">
+              {qty}
+            </span>
+            <span className="mt-0.5 text-[9px] font-bold uppercase tracking-[0.14em] text-aadigreen">
+              in quote
+            </span>
+          </span>
+          <button
+            type="button"
+            onClick={onInc}
+            aria-label="Increase quantity"
+            className="flex h-8 w-9 items-center justify-center rounded-lg bg-ink text-white shadow-sm transition hover:bg-ink-deep active:scale-95"
+          >
+            <Plus size={15} />
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="group flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition-all hover:shadow-md">
-      {/* image area */}
-      <div className="relative mb-3 flex h-44 w-full items-center justify-center overflow-hidden rounded-xl bg-white">
-        <ProductImage product={product} />
-        <span
-          className={`absolute left-2 top-2 rounded-md px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide shadow-sm ${BRAND_STYLE[product.brand] || 'bg-slate-800 text-white'}`}
-        >
-          {product.brand}
+    <div className="mt-1">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
+          Quantity
         </span>
+        <div className="flex h-8 items-center rounded-lg border border-line bg-white">
+          <button
+            type="button"
+            onClick={() => setInputQty(Math.max(1, inputQty - 1))}
+            aria-label="Decrease quantity to add"
+            className="flex h-8 w-8 items-center justify-center rounded-l-lg text-slate-500 transition hover:bg-slate-100 active:scale-95"
+          >
+            <Minus size={14} />
+          </button>
+          <input
+            type="number"
+            min={1}
+            value={inputQty}
+            onChange={(e) =>
+              setInputQty(Math.max(1, Number(e.target.value) || 1))
+            }
+            className="h-8 w-8 border-x border-line bg-white text-center text-xs font-bold tabular-nums text-ink-deep focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+            aria-label="Quantity to add"
+          />
+          <button
+            type="button"
+            onClick={() => setInputQty(inputQty + 1)}
+            aria-label="Increase quantity to add"
+            className="flex h-8 w-8 items-center justify-center rounded-r-lg text-slate-500 transition hover:bg-slate-100 active:scale-95"
+          >
+            <Plus size={14} />
+          </button>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={() => onAdd(Math.max(1, Number(inputQty) || 1))}
+        className="mt-2 flex h-10 w-full items-center justify-center gap-1.5 rounded-xl bg-ink px-3 text-[12.5px] font-bold text-white shadow-sm transition hover:bg-ink-deep active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aadi/50 focus-visible:ring-offset-2"
+      >
+        <Plus size={15} strokeWidth={2.8} />
+        Add to Quote
+      </button>
+    </div>
+  );
+}
+
+function ProductCard({ product, qty, onAdd, onInc, onDec, onEdit, onDelete }) {
+  const [inputQty, setInputQty] = useState(qty > 0 ? qty : 1);
+  useEffect(() => {
+    if (qty > 0) setInputQty(qty);
+  }, [qty]);
+
+  const discount =
+    product.mrp > product.sellingPrice
+      ? Math.round((1 - product.sellingPrice / product.mrp) * 100)
+      : 0;
+  const accent = BRAND_ACCENT[product.brand] || '#64748B';
+
+  return (
+    <article className="product-card group flex h-full flex-col overflow-hidden rounded-2xl border border-line bg-white shadow-soft hover:border-slate-300 hover:shadow-lift focus-within:border-slate-300">
+      {/* image — fixed 4:3 stage keeps every card aligned */}
+      <div className="image-stage relative aspect-[4/3] w-full overflow-hidden">
+        <ProductImage product={product} />
+
+        <span className="absolute left-2.5 top-2.5 z-10 flex max-w-[calc(100%-4rem)] items-center gap-1.5 rounded-full border border-white/80 bg-white/90 py-1 pl-1.5 pr-2 text-[9.5px] font-bold uppercase tracking-[0.12em] text-slate-600 shadow-sm backdrop-blur-md">
+          <span
+            aria-hidden="true"
+            className="h-1.5 w-1.5 shrink-0 rounded-full"
+            style={{ backgroundColor: accent }}
+          />
+          <span className="truncate">{product.brand}</span>
+        </span>
+
         {product.custom && (
-          <span className="absolute left-2 bottom-2 rounded-md bg-violet-600 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-white shadow-sm">
+          <span className="absolute bottom-2.5 left-2.5 z-10 rounded-full border border-violet-200 bg-violet-50/95 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em] text-violet-700 shadow-sm">
             Custom
           </span>
         )}
-        <button
-          onClick={onEdit}
-          title="Edit product"
-          className="absolute right-2 top-2 z-10 rounded-md bg-white/95 p-1.5 text-slate-600 shadow-sm opacity-0 transition group-hover:opacity-100 hover:bg-slate-900 hover:text-white"
-        >
-          <Pencil size={13} />
-        </button>
-        {product.custom && (
-          <span className="absolute right-2 bottom-2 flex gap-1">
+
+        {discount > 0 && (
+          <span className="absolute bottom-2.5 right-2.5 z-10 rounded-full border border-aadigreen/20 bg-white/90 px-2 py-0.5 text-[9.5px] font-bold tabular-nums text-aadigreen shadow-sm backdrop-blur-md">
+            {discount}% off MRP
+          </span>
+        )}
+
+        <div className="absolute right-2 top-2 z-20 flex gap-1 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+          <button
+            type="button"
+            onClick={onEdit}
+            title="Edit product"
+            aria-label={`Edit ${product.name}`}
+            className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/80 bg-white/90 text-slate-500 shadow-sm backdrop-blur-md transition hover:bg-ink hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aadi/50"
+          >
+            <Pencil size={13} />
+          </button>
+          {product.custom && onDelete && (
             <button
+              type="button"
               onClick={onDelete}
               title="Delete product"
-              className="rounded-md bg-white/95 p-1.5 text-slate-600 shadow-sm transition hover:bg-red-600 hover:text-white"
+              aria-label={`Delete ${product.name}`}
+              className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/80 bg-white/90 text-slate-500 shadow-sm backdrop-blur-md transition hover:bg-rose-600 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
             >
               <Trash2 size={13} />
             </button>
-          </span>
-        )}
-        {discount > 0 && (
-          <span className="absolute right-2 top-2 rounded-md bg-emerald-600 px-1.5 py-0.5 text-[11px] font-bold text-white shadow-sm transition group-hover:opacity-0">
-            -{discount}%
-          </span>
-        )}
+          )}
+        </div>
       </div>
 
-      <div className="flex flex-1 flex-col">
-        {/* SKU row */}
-        <div className="mb-1.5 flex items-center gap-1.5">
-          <span className="whitespace-nowrap rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs font-semibold text-slate-700 no-underline [text-decoration:none]">
-            {product.sku}
-          </span>
-          <button
-            onClick={handleCopy}
-            title="Copy SKU"
-            className="rounded p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
-          >
-            {copied ? (
-              <Check size={13} className="text-emerald-600" />
-            ) : (
-              <Copy size={13} />
-            )}
-          </button>
-          {copied && (
-            <span className="text-[11px] font-medium text-emerald-600">Copied</span>
-          )}
-          <span className="ml-auto rounded-full bg-slate-50 px-2 py-0.5 text-[10px] font-medium text-slate-500">
-            HSN {product.hsn}
-          </span>
+      <div className="flex flex-1 flex-col p-3.5 sm:p-4">
+        <div className="flex items-center justify-between gap-2">
+          <SkuBadge sku={product.sku} />
         </div>
 
-        {/* title 2-line clamp */}
         <h3
           title={product.name}
-          className="text-sm font-semibold text-slate-900 leading-snug line-clamp-none min-h-[3.75rem] flex items-start break-words"
+          className="mt-1.5 line-clamp-3 min-h-[3.6rem] break-words text-[13px] font-semibold leading-[1.35] text-ink-deep sm:text-[13.5px]"
         >
           {product.name}
         </h3>
-        <p className="mt-1 block text-[11px] font-medium text-slate-400 uppercase tracking-wider">
+        <p className="mt-1.5 truncate text-[10px] font-semibold uppercase tracking-[0.13em] text-slate-400">
           {product.category}
         </p>
 
-        {/* footer: pricing + CTA aligned across every row */}
-        <div className="mt-auto border-t border-slate-100 pt-3">
-          {/* pricing */}
-          <div className="flex items-baseline justify-between mb-2">
-            <span className="text-base font-bold text-slate-900">
-              {fmt(product.sellingPrice)}
-            </span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 font-semibold border border-amber-200/60">
+        <div className="mt-auto pt-3">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1 border-t border-line/70 pt-3">
+            <div className="flex min-w-0 items-baseline gap-1.5">
+              <span className="text-[17px] font-extrabold tracking-tight text-ink-deep sm:text-lg">
+                {fmt(product.sellingPrice)}
+              </span>
+              {discount > 0 && (
+                <span className="text-[10px] font-medium text-slate-400 line-through">
+                  {fmt(product.mrp)}
+                </span>
+              )}
+            </div>
+            <span className="shrink-0 rounded-md bg-amber-50 px-1.5 py-0.5 text-[9.5px] font-bold text-amber-700 ring-1 ring-inset ring-amber-200/70">
               +{product.gst} GST
             </span>
           </div>
-          {product.mrp > product.sellingPrice && (
-            <div className="mb-2 text-[11px] text-slate-400 line-through">
-              {fmt(product.mrp)}
-            </div>
-          )}
 
-          {/* add / counter */}
-          {qty === 0 ? (
-            <div className="flex items-center gap-1.5 w-full">
-              <input
-                type="number"
-                min={1}
-                value={inputQty}
-                onChange={(e) =>
-                  setInputQty(Math.max(1, Number(e.target.value) || 1))
-                }
-                className="w-10 sm:w-12 h-8 text-center text-xs font-semibold border border-slate-200 rounded-md"
-                aria-label="Quantity to add"
-              />
-              <button
-                onClick={() => onAdd(Math.max(1, Number(inputQty) || 1))}
-                className="flex-1 h-8 px-2 bg-slate-900 text-white rounded-md text-xs font-semibold flex items-center justify-center gap-1 hover:bg-slate-800 active:scale-95 transition-all"
-              >
-                <ShoppingCart className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Add to Quote</span><span className="sm:hidden">Add</span>
-              </button>
-            </div>
-          ) : (
-            <div className="mt-2 flex w-full items-center justify-between rounded-lg border-2 border-slate-900 bg-slate-50 px-1 py-1">
-              <button
-                onClick={onDec}
-                className="flex h-7 w-8 items-center justify-center rounded-md bg-white text-slate-900 shadow-sm transition hover:bg-slate-200"
-                aria-label="Decrease quantity"
-              >
-                <Minus size={15} />
-              </button>
-              <span className="text-sm font-extrabold tabular-nums">
-                {qty} in Quote
-              </span>
-              <button
-                onClick={onInc}
-                className="flex h-7 w-8 items-center justify-center rounded-md bg-slate-900 text-white shadow-sm transition hover:bg-slate-700"
-                aria-label="Increase quantity"
-              >
-                <Plus size={15} />
-              </button>
-            </div>
+          <QuoteControls
+            qty={qty}
+            inputQty={inputQty}
+            setInputQty={setInputQty}
+            onAdd={onAdd}
+            onInc={onInc}
+            onDec={onDec}
+          />
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function ProductListRow({ product, qty, onAdd, onInc, onDec, onEdit, onDelete }) {
+  const [inputQty, setInputQty] = useState(qty > 0 ? qty : 1);
+  useEffect(() => {
+    if (qty > 0) setInputQty(qty);
+  }, [qty]);
+
+  const discount =
+    product.mrp > product.sellingPrice
+      ? Math.round((1 - product.sellingPrice / product.mrp) * 100)
+      : 0;
+  const accent = BRAND_ACCENT[product.brand] || '#64748B';
+
+  return (
+    <article className="product-card group flex flex-col gap-4 rounded-2xl border border-line bg-white p-3 shadow-soft hover:border-slate-300 hover:shadow-lift sm:flex-row sm:items-center sm:p-4">
+      <div className="image-stage relative aspect-[4/3] w-full shrink-0 overflow-hidden rounded-xl sm:aspect-auto sm:h-24 sm:w-32">
+        <ProductImage product={product} />
+        <span className="absolute left-2 top-2 flex items-center gap-1.5 rounded-full border border-white/80 bg-white/90 py-0.5 pl-1.5 pr-2 text-[9px] font-bold uppercase tracking-[0.12em] text-slate-600 shadow-sm backdrop-blur-md">
+          <span
+            aria-hidden="true"
+            className="h-1.5 w-1.5 rounded-full"
+            style={{ backgroundColor: accent }}
+          />
+          {product.brand}
+        </span>
+        {product.custom && (
+          <span className="absolute bottom-2 left-2 rounded-full border border-violet-200 bg-violet-50/95 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em] text-violet-700">
+            Custom
+          </span>
+        )}
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <SkuBadge sku={product.sku} />
+          <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+            {product.category}
+          </span>
+          <span className="text-[10px] font-medium uppercase tracking-[0.1em] text-slate-300">
+            HSN {product.hsn || '—'}
+          </span>
+        </div>
+        <h3
+          title={product.name}
+          className="mt-1 line-clamp-2 text-[14px] font-semibold leading-snug text-ink-deep"
+        >
+          {product.name}
+        </h3>
+        <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          <span className="text-lg font-extrabold tracking-tight text-ink-deep">
+            {fmt(product.sellingPrice)}
+          </span>
+          {discount > 0 && (
+            <span className="text-[11px] font-medium text-slate-400 line-through">
+              {fmt(product.mrp)}
+            </span>
+          )}
+          <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[9.5px] font-bold text-amber-700 ring-1 ring-inset ring-amber-200/70">
+            +{product.gst} GST
+          </span>
+        </div>
+      </div>
+
+      <div className="w-full shrink-0 border-t border-line/70 pt-3 sm:w-44 sm:border-l sm:border-t-0 sm:pb-0 sm:pl-4 sm:pt-0">
+        <QuoteControls
+          qty={qty}
+          inputQty={inputQty}
+          setInputQty={setInputQty}
+          onAdd={onAdd}
+          onInc={onInc}
+          onDec={onDec}
+        />
+        <div className="mt-2 flex justify-end gap-1">
+          <button
+            type="button"
+            onClick={onEdit}
+            className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[10.5px] font-semibold text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aadi/40"
+          >
+            <Pencil size={12} /> Edit
+          </button>
+          {product.custom && onDelete && (
+            <button
+              type="button"
+              onClick={onDelete}
+              className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[10.5px] font-semibold text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"
+            >
+              <Trash2 size={12} /> Delete
+            </button>
           )}
         </div>
       </div>
+    </article>
+  );
+}
+
+/* ---------------- account menu ---------------- */
+
+function AccountMenu({ authUser, onSettings, onSignOut, className = '' }) {
+  return (
+    <div
+      data-account-menu
+      role="menu"
+      aria-label="Account menu"
+      className={`glass-menu absolute z-50 w-64 overflow-hidden rounded-2xl p-1.5 ${className}`}
+    >
+      <div className="flex items-center gap-2.5 rounded-xl px-2.5 py-2.5">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-extrabold text-white shadow-sm">
+          {String(authUser?.name || '?').charAt(0).toUpperCase()}
+        </span>
+        <div className="min-w-0">
+          <p className="truncate text-[13px] font-bold text-ink-deep">
+            {authUser?.name}
+          </p>
+          <p className="truncate text-[10.5px] font-medium text-slate-500">
+            {authUser?.role || 'Quotation team'}
+          </p>
+          <p className="truncate text-[10px] text-slate-400">
+            {authUser?.email || 'contact@aadienterprisespune.com'}
+          </p>
+        </div>
+      </div>
+      <div className="my-1 h-px bg-line/80" />
+      <button
+        type="button"
+        role="menuitem"
+        onClick={onSettings}
+        className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-[12.5px] font-semibold text-slate-600 transition hover:bg-white hover:text-ink"
+      >
+        <UserCircle size={15} /> Account settings
+      </button>
+      <div className="my-1 h-px bg-line/80" />
+      <button
+        type="button"
+        role="menuitem"
+        onClick={onSignOut}
+        className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-[12.5px] font-semibold text-rose-600 transition hover:bg-rose-50"
+      >
+        <LogOut size={15} /> Sign out
+      </button>
     </div>
   );
 }
@@ -2404,9 +2616,13 @@ export default function App() {
   const [searchRaw, setSearchRaw] = useState('');
   const [search, setSearch] = useState('');
   const [catQuery, setCatQuery] = useState('');
+  const [brandQuery, setBrandQuery] = useState('');
+  const [showAllCats, setShowAllCats] = useState(false);
+  const [viewMode, setViewMode] = useState('grid');
   const [brands, setBrands] = useState([]); // [] = all
   const [cats, setCats] = useState([]);
   const [sort, setSort] = useState('relevance');
+  const searchRef = useRef(null);
   const [customProducts, setCustomProducts] = useState(loadCustomProducts);
   const [itemSpecs, setItemSpecs] = useState({});
   const [clients, setClients] = useState(BASE_CLIENTS);
@@ -2476,6 +2692,19 @@ export default function App() {
     }, 250);
     return () => clearTimeout(t);
   }, [searchRaw]);
+
+  // global search shortcut
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && String(e.key).toLowerCase() === 'k') {
+        e.preventDefault();
+        searchRef.current?.focus();
+        searchRef.current?.select();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
 
   useEffect(() => {
     try {
@@ -3160,6 +3389,7 @@ export default function App() {
     setSearchRaw('');
     setSearch('');
     setCatQuery('');
+    setBrandQuery('');
     setBrands([]);
     setCats([]);
     setSort('relevance');
@@ -3214,54 +3444,226 @@ export default function App() {
     );
   };
 
-  const filtersActive =
-    brands.length + cats.length + (search ? 1 : 0) + (sort !== 'relevance' ? 1 : 0);
+  const priceSpan = Math.max(1, catalogHi - catalogLo);
+  const pricePct = (v) =>
+    Math.min(100, Math.max(0, ((Number(v) - catalogLo) / priceSpan) * 100));
+  const priceNarrowed = minPrice > catalogLo || maxPrice < catalogHi;
+  const activeFilterCount =
+    brands.length +
+    cats.length +
+    (search ? 1 : 0) +
+    (priceNarrowed ? 1 : 0) +
+    (sort !== 'relevance' ? 1 : 0);
+  const hasActiveFilters = activeFilterCount > 0;
+
+  const filteredBrands = allBrands.filter(([b]) =>
+    b.toLowerCase().includes(brandQuery.trim().toLowerCase()),
+  );
+  const filteredCategories = categories.filter(([c]) =>
+    c.toLowerCase().includes(catQuery.trim().toLowerCase()),
+  );
+  const visibleCategories = catQuery.trim()
+    ? filteredCategories
+    : showAllCats
+      ? filteredCategories
+      : filteredCategories.filter(
+          ([c], index) => index < 10 || cats.includes(c),
+        );
+  const sortLabel =
+    SORT_OPTIONS.find((o) => o.value === sort)?.label || 'Recommended';
+
+  const clearFilterChip = (type, value) => {
+    if (type === 'search') {
+      setSearchRaw('');
+      setSearch('');
+    } else if (type === 'brand') {
+      setBrands((list) => list.filter((b) => b !== value));
+    } else if (type === 'category') {
+      setCats((list) => list.filter((c) => c !== value));
+    } else if (type === 'price') {
+      setMinPrice(catalogLo);
+      setMaxPrice(catalogHi);
+    } else if (type === 'sort') {
+      setSort('relevance');
+    }
+  };
 
   const filterPanel = (
     <div className="flex flex-col gap-5">
+      {hasActiveFilters && (
+        <section className="rounded-xl border border-line/80 bg-slate-50/70 p-2.5">
+          <div className="mb-1.5 flex items-center justify-between">
+            <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
+              Active filters
+            </span>
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="text-[10.5px] font-bold text-aadi transition hover:text-aadi-dark"
+            >
+              Clear all
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {search && (
+              <button
+                type="button"
+                onClick={() => clearFilterChip('search')}
+                className="flex items-center gap-1 rounded-full border border-line bg-white py-0.5 pl-2 pr-1 text-[10.5px] font-semibold text-slate-600 transition hover:border-slate-300 hover:text-ink"
+                aria-label="Remove search filter"
+              >
+                “{searchRaw.trim()}”
+                <X size={11} />
+              </button>
+            )}
+            {brands.map((b) => (
+              <button
+                type="button"
+                key={`chip-brand-${b}`}
+                onClick={() => clearFilterChip('brand', b)}
+                className="flex items-center gap-1 rounded-full border border-line bg-white py-0.5 pl-2 pr-1 text-[10.5px] font-semibold text-slate-600 transition hover:border-slate-300 hover:text-ink"
+                aria-label={`Remove ${b} brand filter`}
+              >
+                {b}
+                <X size={11} />
+              </button>
+            ))}
+            {cats.map((c) => (
+              <button
+                type="button"
+                key={`chip-cat-${c}`}
+                onClick={() => clearFilterChip('category', c)}
+                className="flex max-w-full items-center gap-1 rounded-full border border-line bg-white py-0.5 pl-2 pr-1 text-[10.5px] font-semibold text-slate-600 transition hover:border-slate-300 hover:text-ink"
+                aria-label={`Remove ${c} category filter`}
+              >
+                <span className="max-w-[130px] truncate">{c}</span>
+                <X size={11} className="shrink-0" />
+              </button>
+            ))}
+            {priceNarrowed && (
+              <button
+                type="button"
+                onClick={() => clearFilterChip('price')}
+                className="flex items-center gap-1 rounded-full border border-line bg-white py-0.5 pl-2 pr-1 text-[10.5px] font-semibold tabular-nums text-slate-600 transition hover:border-slate-300 hover:text-ink"
+                aria-label="Remove price filter"
+              >
+                {fmt(minPrice)}–{fmt(maxPrice)}
+                <X size={11} />
+              </button>
+            )}
+            {sort !== 'relevance' && (
+              <button
+                type="button"
+                onClick={() => clearFilterChip('sort')}
+                className="flex items-center gap-1 rounded-full border border-line bg-white py-0.5 pl-2 pr-1 text-[10.5px] font-semibold text-slate-600 transition hover:border-slate-300 hover:text-ink"
+                aria-label="Reset sort"
+              >
+                {sortLabel}
+                <X size={11} />
+              </button>
+            )}
+          </div>
+        </section>
+      )}
+
       {/* brand */}
       <section>
-        <h3 className="mb-2 flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wider text-slate-500">
-          <Building2 size={13} /> Brand
-        </h3>
-        <div className="flex flex-wrap gap-2">
-          {allBrands.map(([b, n]) => {
+        <div className="mb-2 flex items-center justify-between">
+          <h3 className="flex items-center gap-1.5 text-[10.5px] font-extrabold uppercase tracking-[0.14em] text-slate-500">
+            <Building2 size={13} /> Brand
+          </h3>
+          {brands.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setBrands([])}
+              className="text-[10.5px] font-bold text-slate-400 transition hover:text-ink"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+        <div className="relative mb-1.5">
+          <Search
+            size={13}
+            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"
+          />
+          <input
+            value={brandQuery}
+            onChange={(e) => setBrandQuery(e.target.value)}
+            placeholder="Find a brand…"
+            className="h-8 w-full rounded-lg border border-line bg-white pl-8 pr-7 text-[12px] font-medium text-ink placeholder:text-slate-400 focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/5"
+            aria-label="Search brands"
+          />
+          {brandQuery && (
+            <button
+              type="button"
+              onClick={() => setBrandQuery('')}
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              aria-label="Clear brand search"
+            >
+              <X size={11} />
+            </button>
+          )}
+        </div>
+        <div className="flex max-h-52 flex-col gap-0.5 overflow-y-auto pr-1 nice-scroll">
+          {filteredBrands.map(([b, n]) => {
             const active = brands.includes(b);
             return (
               <button
+                type="button"
                 key={b}
                 onClick={() => toggle(brands, setBrands, b)}
                 aria-pressed={active}
-                className={`flex items-center gap-1.5 rounded-full border-2 px-3.5 py-1.5 text-[13px] font-bold transition active:scale-95 ${
+                className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[12.5px] font-semibold transition ${
                   active
-                    ? ACTIVE_PILL[b] || 'border-slate-900 bg-slate-900 text-white shadow-sm'
-                    : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'
+                    ? 'bg-ink/[0.055] text-ink-deep'
+                    : 'text-slate-600 hover:bg-slate-50 hover:text-ink'
                 }`}
               >
-                {b}
                 <span
-                  className={`rounded-full px-1.5 text-[11px] font-extrabold tabular-nums ${
-                    active ? 'bg-black/15' : 'bg-slate-100 text-slate-500'
+                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition ${
+                    active
+                      ? 'border-ink bg-ink text-white'
+                      : 'border-slate-300 bg-white'
                   }`}
                 >
+                  {active && <Check size={10} strokeWidth={3.2} />}
+                </span>
+                <span
+                  aria-hidden="true"
+                  className="h-1.5 w-1.5 shrink-0 rounded-full"
+                  style={{
+                    backgroundColor: BRAND_ACCENT[b] || '#94A3B8',
+                  }}
+                />
+                <span className="min-w-0 flex-1 truncate">{b}</span>
+                <span className="shrink-0 rounded-full bg-slate-100 px-1.5 text-[10px] font-bold tabular-nums text-slate-500">
                   {n}
                 </span>
               </button>
             );
           })}
+          {filteredBrands.length === 0 && (
+            <p className="rounded-lg bg-slate-50 px-3 py-4 text-center text-[11px] font-medium text-slate-400">
+              No brands match “{brandQuery}”
+            </p>
+          )}
         </div>
       </section>
+
+      <div className="h-px bg-line/80" />
 
       {/* category */}
       <section>
         <div className="mb-2 flex items-center justify-between">
-          <h3 className="flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wider text-slate-500">
-            <Package size={13} /> Category
+          <h3 className="flex items-center gap-1.5 text-[10.5px] font-extrabold uppercase tracking-[0.14em] text-slate-500">
+            <Tag size={13} /> Category
           </h3>
           {cats.length > 0 && (
             <button
+              type="button"
               onClick={() => setCats([])}
-              className="text-[11px] font-bold text-slate-500 underline hover:text-slate-800"
+              className="text-[10.5px] font-bold text-slate-400 transition hover:text-ink"
             >
               Clear
             </button>
@@ -3276,61 +3678,78 @@ export default function App() {
             value={catQuery}
             onChange={(e) => setCatQuery(e.target.value)}
             placeholder={`Search ${categories.length} categories…`}
-            className="w-full rounded-lg border border-slate-200 bg-white py-1.5 pl-8 pr-7 text-[13px] font-medium focus:border-slate-900 focus:outline-none"
+            className="h-8 w-full rounded-lg border border-line bg-white pl-8 pr-7 text-[12px] font-medium text-ink placeholder:text-slate-400 focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/5"
             aria-label="Search categories"
           />
           {catQuery && (
             <button
+              type="button"
               onClick={() => setCatQuery('')}
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-full p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
               aria-label="Clear category search"
             >
-              <X size={12} />
+              <X size={11} />
             </button>
           )}
         </div>
-        <div className="flex max-h-64 flex-col gap-1 overflow-y-auto pr-1 nice-scroll">
-          {categories
-            .filter(([c]) =>
-              c.toLowerCase().includes(catQuery.trim().toLowerCase()),
-            )
-            .map(([c, n]) => {
+        <div className="flex max-h-60 flex-col gap-0.5 overflow-y-auto pr-1 nice-scroll">
+          {visibleCategories.map(([c, n]) => {
             const active = cats.includes(c);
             return (
               <button
+                type="button"
                 key={c}
                 title={c}
                 onClick={() => toggle(cats, setCats, c)}
-                className={`flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-left text-[13px] font-medium transition ${
+                aria-pressed={active}
+                className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[12.5px] font-medium transition ${
                   active
-                    ? 'border-slate-900 bg-slate-900 text-white shadow-sm'
-                    : 'border-slate-200 bg-white text-slate-700 hover:border-slate-400'
+                    ? 'bg-ink/[0.055] font-semibold text-ink-deep'
+                    : 'text-slate-600 hover:bg-slate-50 hover:text-ink'
                 }`}
               >
-                <span className="truncate">{c}</span>
                 <span
-                  className={`shrink-0 rounded-full px-1.5 text-[11px] font-bold tabular-nums ${
-                    active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'
+                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition ${
+                    active
+                      ? 'border-ink bg-ink text-white'
+                      : 'border-slate-300 bg-white'
                   }`}
                 >
+                  {active && <Check size={10} strokeWidth={3.2} />}
+                </span>
+                <span className="min-w-0 flex-1 truncate">{c}</span>
+                <span className="shrink-0 rounded-full bg-slate-100 px-1.5 text-[10px] font-bold tabular-nums text-slate-500">
                   {n}
                 </span>
               </button>
             );
           })}
-          {categories.filter(([c]) =>
-            c.toLowerCase().includes(catQuery.trim().toLowerCase()),
-          ).length === 0 && (
-            <p className="rounded-lg bg-white px-3 py-4 text-center text-xs font-medium text-slate-400">
+          {visibleCategories.length === 0 && (
+            <p className="rounded-lg bg-slate-50 px-3 py-4 text-center text-[11px] font-medium text-slate-400">
               No categories match “{catQuery}”
             </p>
           )}
         </div>
+        {!catQuery.trim() && filteredCategories.length > 10 && (
+          <button
+            type="button"
+            onClick={() => setShowAllCats((v) => !v)}
+            className="mt-1.5 flex w-full items-center justify-center gap-1 rounded-lg py-1.5 text-[10.5px] font-bold text-slate-400 transition hover:bg-slate-50 hover:text-ink"
+          >
+            {showAllCats ? 'Show fewer' : `Show all ${filteredCategories.length}`}
+            <ChevronDown
+              size={12}
+              className={`transition-transform ${showAllCats ? 'rotate-180' : ''}`}
+            />
+          </button>
+        )}
       </section>
+
+      <div className="h-px bg-line/80" />
 
       {/* sort */}
       <section>
-        <h3 className="mb-2 text-xs font-extrabold uppercase tracking-wider text-slate-500">
+        <h3 className="mb-2 text-[10.5px] font-extrabold uppercase tracking-[0.14em] text-slate-500">
           Price sort
         </h3>
         <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1">
@@ -3340,15 +3759,17 @@ export default function App() {
             { v: 'high-low', label: 'High → Low', icon: ArrowDownWideNarrow },
           ].map((o) => (
             <button
+              type="button"
               key={o.v}
               onClick={() => setSort(o.v)}
-              className={`flex items-center justify-center gap-1 rounded-lg px-1 py-1.5 text-[12px] font-bold transition ${
+              aria-pressed={sort === o.v}
+              className={`flex items-center justify-center gap-0.5 whitespace-nowrap rounded-lg px-0.5 py-1.5 text-[10px] font-bold transition ${
                 sort === o.v
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-800'
+                  ? 'bg-white text-ink-deep shadow-sm'
+                  : 'text-slate-500 hover:text-ink'
               }`}
             >
-              {o.icon && <o.icon size={13} />}
+              {o.icon && <o.icon size={11} />}
               {o.label}
             </button>
           ))}
@@ -3357,48 +3778,83 @@ export default function App() {
 
       {/* price range */}
       <section>
-        <h3 className="mb-2 text-xs font-extrabold uppercase tracking-wider text-slate-500">
-          Price range
-        </h3>
-        <div className="rounded-xl border border-slate-200 bg-white p-3">
-          <div className="flex items-center gap-2">
-            <div className="relative w-full">
-              <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[13px] font-bold text-slate-400">
-                ₹
+        <div className="mb-2 flex items-center justify-between">
+          <h3 className="text-[10.5px] font-extrabold uppercase tracking-[0.14em] text-slate-500">
+            Price range
+          </h3>
+          {priceNarrowed && (
+            <button
+              type="button"
+              onClick={() => clearFilterChip('price')}
+              className="text-[10.5px] font-bold text-slate-400 transition hover:text-ink"
+            >
+              Reset
+            </button>
+          )}
+        </div>
+        <div className="rounded-xl border border-line bg-white p-3">
+          <div className="grid grid-cols-1 gap-2">
+            <label className="block">
+              <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">
+                Min
               </span>
-              <input
-                type="text"
-                inputMode="numeric"
-                value={groupNum(minPrice)}
-                onChange={(e) =>
-                  setMinPrice(
-                    Math.max(catalogLo, Math.min(parseDigits(e.target.value), maxPrice)),
-                  )
-                }
-                className="w-full rounded-lg border border-slate-200 py-1.5 pl-6 pr-2 text-[13px] font-semibold tabular-nums focus:border-slate-900 focus:outline-none"
-                aria-label="Minimum price"
-              />
-            </div>
-            <span className="text-slate-400">–</span>
-            <div className="relative w-full">
-              <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[13px] font-bold text-slate-400">
-                ₹
+              <div className="relative w-full">
+                <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[12px] font-bold text-slate-400">
+                  ₹
+                </span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={groupNum(minPrice)}
+                  onChange={(e) =>
+                    setMinPrice(
+                      Math.max(
+                        catalogLo,
+                        Math.min(parseDigits(e.target.value), maxPrice),
+                      ),
+                    )
+                  }
+                  className="h-8 w-full rounded-lg border border-line py-1.5 pl-6 pr-2 text-[12px] font-semibold tabular-nums text-ink focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/5"
+                  aria-label="Minimum price"
+                />
+              </div>
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">
+                Max
               </span>
-              <input
-                type="text"
-                inputMode="numeric"
-                value={groupNum(maxPrice)}
-                onChange={(e) =>
-                  setMaxPrice(
-                    Math.min(catalogHi, Math.max(parseDigits(e.target.value), minPrice)),
-                  )
-                }
-                className="w-full rounded-lg border border-slate-200 py-1.5 pl-6 pr-2 text-[13px] font-semibold tabular-nums focus:border-slate-900 focus:outline-none"
-                aria-label="Maximum price"
-              />
-            </div>
+              <div className="relative w-full">
+                <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[12px] font-bold text-slate-400">
+                  ₹
+                </span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={groupNum(maxPrice)}
+                  onChange={(e) =>
+                    setMaxPrice(
+                      Math.min(
+                        catalogHi,
+                        Math.max(parseDigits(e.target.value), minPrice),
+                      ),
+                    )
+                  }
+                  className="h-8 w-full rounded-lg border border-line py-1.5 pl-6 pr-2 text-[12px] font-semibold tabular-nums text-ink focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/5"
+                  aria-label="Maximum price"
+                />
+              </div>
+            </label>
           </div>
-          <div className="mt-3 flex flex-col gap-2">
+
+          <div className="dual-range mt-4">
+            <div className="pointer-events-none absolute left-0 right-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-slate-200" />
+            <div
+              className="pointer-events-none absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-ink"
+              style={{
+                left: `${pricePct(minPrice)}%`,
+                right: `${100 - pricePct(maxPrice)}%`,
+              }}
+            />
             <input
               type="range"
               min={catalogLo}
@@ -3408,8 +3864,7 @@ export default function App() {
               onChange={(e) =>
                 setMinPrice(Math.min(Number(e.target.value), maxPrice))
               }
-              className="price-range"
-              aria-label="Min price slider"
+              aria-label="Minimum price slider"
             />
             <input
               type="range"
@@ -3420,116 +3875,167 @@ export default function App() {
               onChange={(e) =>
                 setMaxPrice(Math.max(Number(e.target.value), minPrice))
               }
-              className="price-range"
-              aria-label="Max price slider"
+              aria-label="Maximum price slider"
             />
           </div>
-          <p className="mt-2 text-center text-[12px] font-bold tabular-nums text-slate-700">
+          <p className="mt-1.5 text-center text-[11px] font-bold tabular-nums text-slate-500">
             {fmt(minPrice)} — {fmt(maxPrice)}
           </p>
         </div>
       </section>
 
       <button
+        type="button"
         onClick={resetFilters}
-        className="flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] font-bold text-slate-600 transition hover:border-slate-400 hover:text-slate-900"
+        className="flex items-center justify-center gap-1.5 rounded-xl border border-line bg-white px-3 py-2.5 text-[12px] font-bold text-slate-500 transition hover:border-slate-300 hover:text-ink active:scale-[0.99]"
       >
         <RotateCcw size={14} /> Reset all filters
       </button>
     </div>
   );
 
+  const openAccountSettings = () => {
+    setSettingsForm({
+      name: authUser?.name || '',
+      phone: authUser?.phone || '',
+      password: '',
+    });
+    setSettingsOpen(true);
+    setIsAccountMenuOpen(false);
+  };
+  const closeAccountMenu = () => setIsAccountMenuOpen(false);
+
   if (!authUser) {
     return <LoginView onLogin={setAuthUser} />;
   }
 
   return (
-    <div className="min-h-screen">
-      {/* ============ HEADER ============ */}
-    <>
-      {/* Mobile header */}
-      <header className="no-print sticky top-0 z-40 md:hidden bg-white border-b border-slate-200 px-4 py-2 flex flex-col gap-2">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <img src={`${import.meta.env.BASE_URL}aadi-logo.png`} alt="Aadi Enterprises" className="h-7 w-auto object-contain" />
-            <span className="text-sm font-bold text-slate-900">Aadi Quote</span>
+    <div className="catalogue-shell min-h-screen overflow-x-hidden">
+      {/* ============ MOBILE HEADER ============ */}
+      <header className="no-print catalogue-header sticky top-0 z-40 border-b border-line/80 md:hidden">
+        <div className="flex items-center justify-between gap-2 px-3 pb-1.5 pt-[max(0.6rem,env(safe-area-inset-top))]">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-line bg-white shadow-sm">
+              <img
+                src={`${import.meta.env.BASE_URL}aadi-logo.png`}
+                alt="Aadi Enterprises"
+                className="h-7 w-auto object-contain"
+              />
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-[13px] font-extrabold leading-tight tracking-tight text-ink-deep">
+                Aadi Enterprises
+              </p>
+              <p className="truncate text-[9.5px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                Quotation workspace
+              </p>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1.5">
             <button
+              type="button"
               onClick={() => setDrawerOpen(true)}
-              className="flex h-8 items-center gap-1 rounded-full bg-slate-900 px-3 text-[12px] font-bold text-white"
+              className="relative flex h-9 w-9 items-center justify-center rounded-full bg-ink text-white shadow-sm transition active:scale-95"
+              aria-label={`Open quotation cart, ${itemCount} items`}
             >
-              🛒 {itemCount} items
+              <ShoppingCart size={16} />
+              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-aadi px-1 text-[9px] font-extrabold tabular-nums text-white ring-2 ring-white">
+                {itemCount}
+              </span>
             </button>
-            <button
-              onClick={() => setIsAccountMenuOpen((v) => !v)}
-              className={`flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br text-xs font-bold text-white ${
-                authUser?.name === 'Aditya'
-                  ? 'from-orange-500 to-amber-600'
-                  : authUser?.name === 'Abhijit'
-                  ? 'from-emerald-500 to-green-600'
-                  : 'from-slate-700 to-slate-900'
-              }`}
-            >
-              {String(authUser?.name || '?').charAt(0).toUpperCase()}
-            </button>
-            {isAccountMenuOpen && (
-              <div data-account-menu className="absolute right-4 top-12 w-56 bg-white rounded-xl shadow-2xl border border-slate-100 py-1.5 z-50">
-                <div className="px-3 py-2 border-b border-slate-100">
-                  <p className="text-sm font-bold text-slate-900">{authUser?.name}</p>
-                  <p className="text-[11px] text-slate-500">{authUser?.role || 'User'}</p>
-                  <p className="text-[11px] text-slate-400">{authUser?.email || 'contact@aadienterprisespune.com'}</p>
-                </div>
-                <button
-                  onClick={() => {
-                    setSettingsForm({ name: authUser?.name || '', phone: authUser?.phone || '', password: '' });
-                    setSettingsOpen(true);
-                    setIsAccountMenuOpen(false);
-                  }}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-[13px] font-medium text-slate-700 hover:bg-slate-50"
-                >
-                  <UserCircle size={15} /> Account Settings
-                </button>
-                <div className="my-1 border-t border-slate-100" />
-                <button
-                  onClick={() => setAuthUser(null)}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-[13px] font-medium text-rose-600 hover:bg-rose-50"
-                >
-                  <LogOut size={15} /> Sign Out
-                </button>
-              </div>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setIsAccountMenuOpen((v) => !v)}
+                aria-haspopup="menu"
+                aria-expanded={isAccountMenuOpen}
+                className={`flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br text-xs font-extrabold text-white shadow-sm ring-2 ring-white ${
+                  authUser?.name === 'Aditya'
+                    ? 'from-orange-500 to-amber-600'
+                    : authUser?.name === 'Abhijit'
+                      ? 'from-emerald-500 to-green-600'
+                      : 'from-slate-700 to-slate-900'
+                }`}
+                aria-label="Open account menu"
+              >
+                {String(authUser?.name || '?').charAt(0).toUpperCase()}
+              </button>
+              {isAccountMenuOpen && (
+                <AccountMenu
+                  authUser={authUser}
+                  onSettings={openAccountSettings}
+                  onSignOut={() => setAuthUser(null)}
+                  className="right-0 top-full mt-2"
+                />
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 px-3 pb-2">
+          <div className="relative min-w-0 flex-1">
+            <Search
+              size={14}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+            />
+            <input
+              value={searchRaw}
+              onChange={(e) => setSearchRaw(e.target.value)}
+              placeholder="Search products, SKU, brand, category…"
+              className="h-9 w-full rounded-xl border border-line bg-white pl-9 pr-8 text-[12px] font-medium text-ink placeholder:text-slate-400 focus:border-ink focus:outline-none focus:ring-4 focus:ring-ink/5"
+              aria-label="Search products"
+            />
+            {searchRaw && (
+              <button
+                type="button"
+                onClick={() => setSearchRaw('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                aria-label="Clear search"
+              >
+                <X size={13} />
+              </button>
             )}
           </div>
-        </div>
-        <div className="relative w-full">
-          <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            value={searchRaw}
-            onChange={(e) => setSearchRaw(e.target.value)}
-            placeholder="Search products, SKUs, HSN..."
-            className="w-full h-9 rounded-xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-xs font-medium focus:border-slate-900 focus:bg-white focus:outline-none"
-          />
-        </div>
-        <div className="flex gap-2 overflow-x-auto py-1 [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: 'none' }}>
           <button
+            type="button"
+            onClick={() => setFiltersOpen(true)}
+            className="relative flex h-9 shrink-0 items-center gap-1.5 rounded-xl border border-line bg-white px-3 text-[11.5px] font-bold text-slate-600 shadow-sm transition active:scale-95"
+            aria-label="Open filters"
+          >
+            <SlidersHorizontal size={14} />
+            Filters
+            {activeFilterCount > 0 && (
+              <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-ink px-1 text-[9px] font-extrabold tabular-nums text-white">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
+        </div>
+
+        <div className="no-scrollbar flex gap-1.5 overflow-x-auto px-3 pb-2">
+          <button
+            type="button"
             onClick={() => setBoqOpen(true)}
-            className="flex h-8 shrink-0 items-center gap-1 rounded-full bg-indigo-600 px-3 text-[12px] font-bold text-white"
+            className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-line bg-white px-2.5 text-[11px] font-bold text-slate-600 shadow-sm transition active:scale-95"
+            title="Import products from BOQ / RFQ"
           >
-            📥 Import BOQ
+            <UploadCloud size={13} /> Import
           </button>
           <button
+            type="button"
             onClick={openAddModal}
-            className="flex h-8 shrink-0 items-center gap-1 rounded-full border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-700"
+            className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-line bg-white px-2.5 text-[11px] font-bold text-slate-600 shadow-sm transition active:scale-95"
           >
-            + Product
+            <Plus size={13} /> Add product
           </button>
           <button
+            type="button"
             onClick={() => setRecordsOpen(true)}
-            className="relative flex h-8 shrink-0 items-center gap-1 rounded-full border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-700"
+            className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-line bg-white px-2.5 text-[11px] font-bold text-slate-600 shadow-sm transition active:scale-95"
           >
-            📋 Records
+            <ClipboardList size={13} /> Records
             {archive.length > 0 && (
-              <span className="ml-1 rounded-full bg-[#C8102E] px-1.5 text-[9px] font-extrabold text-white">
+              <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-ink px-1 text-[9px] font-extrabold tabular-nums text-white">
                 {archive.length}
               </span>
             )}
@@ -3537,281 +4043,527 @@ export default function App() {
         </div>
       </header>
 
-      {/* Desktop header */}
-      <header className="no-print sticky top-0 z-40 hidden md:flex h-16 px-6 bg-white border-b border-slate-200 items-center justify-between gap-4">
-      <div className="flex items-center gap-3 min-w-0">
-        <img src={`${import.meta.env.BASE_URL}aadi-logo.png`} alt="Aadi Enterprises" className="h-9 w-auto shrink-0 object-contain" />
-        <div className="min-w-0">
-          <h1 className="text-sm font-extrabold leading-tight text-slate-900">Aadi Enterprises</h1>
-          <p className="text-[11px] font-medium text-slate-500">Quotation Portal</p>
-        </div>
-        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
-          {catalog.length} products
-        </span>
-      </div>
-      <div className="relative max-w-md w-full">
-        <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-        <input
-          value={searchRaw}
-          onChange={(e) => setSearchRaw(e.target.value)}
-          placeholder="Search 777+ products, SKUs, HSN..."
-          className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-16 text-sm font-medium focus:border-slate-900 focus:bg-white focus:outline-none"
-        />
-        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-bold text-slate-400">
-          Ctrl K
-        </span>
-        {searchRaw && (
-          <button
-            onClick={() => setSearchRaw('')}
-            className="absolute right-12 top-1/2 -translate-y-1/2 rounded-full p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
-            aria-label="Clear search"
-          >
-            <X size={14} />
-          </button>
-        )}
-      </div>
-      <div className="flex items-center gap-2">
-        <button
-          onClick={() => setBoqOpen(true)}
-          className="flex h-9 items-center gap-1.5 rounded-xl bg-indigo-600 px-3 text-[13px] font-bold text-white shadow-sm transition hover:bg-indigo-700 active:scale-[.98]"
-          title="Import BOQ / RFQ"
-        >
-          <UploadCloud size={15} />
-          <span className="hidden sm:inline">Import BOQ</span>
-        </button>
-        <button
-          onClick={openAddModal}
-          className="flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[13px] font-bold text-slate-700 shadow-sm transition hover:border-slate-400 hover:text-slate-900 active:scale-[.98]"
-          title="Add a custom product to the catalog"
-        >
-          <Plus size={15} />
-          <span className="hidden sm:inline">+ Add Product</span>
-        </button>
-        <button
-          onClick={() => setRecordsOpen(true)}
-          className="relative flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[13px] font-bold text-slate-700 shadow-sm transition hover:border-slate-400 hover:text-slate-900 active:scale-[.98]"
-          title="Quotation Records"
-        >
-          <ClipboardList size={15} />
-          <span className="hidden sm:inline">Records</span>
-          {archive.length > 0 && (
-            <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#C8102E] px-1 text-[9px] font-extrabold tabular-nums text-white">
-              {archive.length}
-            </span>
-          )}
-        </button>
-        <button
-          onClick={() => setDrawerOpen(true)}
-          className="flex h-9 items-center gap-2 rounded-xl bg-slate-900 px-3.5 text-white shadow-sm transition hover:bg-slate-700 active:scale-[.98]"
-        >
-          <ShoppingCart size={15} />
-          <span className="text-[12px] font-extrabold tabular-nums">
-            🛒 {itemCount} items • {fmt(grandTotal)}
+      {/* ============ DESKTOP HEADER ============ */}
+      <header className="no-print catalogue-header sticky top-0 z-40 hidden h-[72px] items-center gap-3 border-b border-line/80 px-5 md:flex xl:px-7">
+        <div className="flex min-w-0 shrink-0 items-center gap-2.5">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-line bg-white shadow-sm">
+            <img
+              src={`${import.meta.env.BASE_URL}aadi-logo.png`}
+              alt="Aadi Enterprises"
+              className="h-8 w-auto object-contain"
+            />
           </span>
-        </button>
-        <div className="relative">
-          <button
-            onClick={() => setIsAccountMenuOpen((v) => !v)}
-            className="flex items-center gap-2 rounded-full bg-slate-50 border border-slate-200 pl-1 pr-3 py-1 hover:bg-slate-100 transition-colors"
-          >
-            <span
-              className={`flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br text-xs font-bold text-white ${
-                authUser?.name === 'Aditya'
-                  ? 'from-orange-500 to-amber-600'
-                  : authUser?.name === 'Abhijit'
-                  ? 'from-emerald-500 to-green-600'
-                  : 'from-slate-700 to-slate-900'
-              }`}
-            >
-              {String(authUser?.name || '?').charAt(0).toUpperCase()}
-            </span>
-            <span className="text-xs font-semibold text-slate-800">{authUser?.name}</span>
-          </button>
-          {isAccountMenuOpen && (
-            <div data-account-menu className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-2xl border border-slate-100 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-100">
-              <div className="px-3 py-2 border-b border-slate-100">
-                <p className="text-sm font-bold text-slate-900">{authUser?.name}</p>
-                <p className="text-[11px] text-slate-500">{authUser?.role || 'User'}</p>
-                <p className="text-[11px] text-slate-400">{authUser?.email || 'contact@aadienterprisespune.com'}</p>
-              </div>
-              <button
-                onClick={() => {
-                  setSettingsForm({ name: authUser?.name || '', phone: authUser?.phone || '', password: '' });
-                  setSettingsOpen(true);
-                  setIsAccountMenuOpen(false);
-                }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-[13px] font-medium text-slate-700 hover:bg-slate-50"
-              >
-                <UserCircle size={15} /> Account Settings
-              </button>
-              <div className="my-1 border-t border-slate-100" />
-              <button
-                onClick={() => setAuthUser(null)}
-                className="flex w-full items-center gap-2 px-3 py-2 text-[13px] font-medium text-rose-600 hover:bg-rose-50"
-              >
-                <LogOut size={15} /> Sign Out
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-    </header>
-    </>
-
-
-
-      {/* ============ BODY ============ */}
-      <div className="no-print mx-auto flex max-w-[1400px] gap-5 px-3 pb-4 pt-6 sm:px-5">
-        {/* sidebar (desktop) */}
-        <aside className="sticky top-[76px] hidden h-fit w-64 shrink-0 rounded-2xl border border-slate-200 bg-slate-50/60 p-4 lg:block">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="flex items-center gap-1.5 text-sm font-extrabold">
-              <SlidersHorizontal size={15} /> Filters
-              {filtersActive > 0 && (
-                <span className="rounded-full bg-slate-900 px-1.5 text-[11px] font-bold text-white">
-                  {filtersActive}
-                </span>
-              )}
-            </h2>
+          <div className="min-w-0">
+            <h1 className="truncate text-[13.5px] font-extrabold leading-tight tracking-tight text-ink-deep">
+              Aadi Enterprises
+            </h1>
+            <p className="truncate text-[9.5px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+              Quotation workspace
+            </p>
           </div>
-          {filterPanel}
-        </aside>
+        </div>
 
-        {/* mobile filter toggle */}
-        <div className="fixed bottom-4 left-4 z-30 lg:hidden">
+        <div className="flex min-w-0 flex-1 justify-center px-1">
+          <div className="relative w-full max-w-xl">
+            <Search
+              size={16}
+              className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+            />
+            <input
+              ref={searchRef}
+              value={searchRaw}
+              onChange={(e) => setSearchRaw(e.target.value)}
+              placeholder="Search by product, SKU, brand or category…"
+              className="h-10 w-full rounded-xl border border-line bg-white/75 pl-10 pr-20 text-[12.5px] font-medium text-ink shadow-sm placeholder:text-slate-400 focus:border-ink focus:bg-white focus:outline-none focus:ring-4 focus:ring-ink/5"
+              aria-label="Search products by name, SKU, brand or category"
+            />
+            <span className="pointer-events-none absolute right-3 top-1/2 hidden -translate-y-1/2 items-center gap-1 rounded-md border border-line bg-slate-50 px-1.5 py-0.5 text-[9.5px] font-bold text-slate-400 lg:flex">
+              Ctrl K
+            </span>
+            {searchRaw && (
+              <button
+                type="button"
+                onClick={() => setSearchRaw('')}
+                className="absolute right-12 top-1/2 -translate-y-1/2 rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 lg:right-14"
+                aria-label="Clear search"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-1.5">
           <button
-            onClick={() => setFiltersOpen((v) => !v)}
-            className="flex items-center gap-2 rounded-full bg-slate-900 px-4 py-3 text-sm font-bold text-white shadow-pop"
+            type="button"
+            onClick={() => setBoqOpen(true)}
+            className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-line bg-white px-0 text-[11.5px] font-bold text-slate-600 shadow-sm transition hover:border-slate-300 hover:text-ink active:scale-95 w-10 xl:w-auto xl:px-3"
+            title="Import products from BOQ / RFQ"
           >
-            <SlidersHorizontal size={16} /> Filters
-            {filtersActive > 0 && (
-              <span className="rounded-full bg-white px-1.5 text-[11px] font-extrabold text-slate-900">
-                {filtersActive}
+            <UploadCloud size={15} />
+            <span className="hidden xl:inline">Import</span>
+          </button>
+          <button
+            type="button"
+            onClick={openAddModal}
+            className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-line bg-white px-0 text-[11.5px] font-bold text-slate-600 shadow-sm transition hover:border-slate-300 hover:text-ink active:scale-95 w-10 xl:w-auto xl:px-3"
+            title="Add a custom product to the catalogue"
+          >
+            <Plus size={15} />
+            <span className="hidden xl:inline">Add product</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setRecordsOpen(true)}
+            className="relative flex h-10 items-center justify-center gap-1.5 rounded-xl border border-line bg-white px-0 text-[11.5px] font-bold text-slate-600 shadow-sm transition hover:border-slate-300 hover:text-ink active:scale-95 w-10 lg:w-auto lg:px-3"
+            title="Quotation records"
+          >
+            <ClipboardList size={15} />
+            <span className="hidden lg:inline">Records</span>
+            {archive.length > 0 && (
+              <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-aadi px-1 text-[9px] font-extrabold tabular-nums text-white ring-2 ring-white">
+                {archive.length}
               </span>
             )}
           </button>
-        </div>
-        {filtersOpen && (
-          <div className="fixed inset-0 z-40 lg:hidden">
-            <div
-              className="absolute inset-0 bg-slate-900/50 animate-fade-in"
-              onClick={() => setFiltersOpen(false)}
-            />
-            <div className="absolute bottom-0 left-0 right-0 max-h-[85vh] overflow-y-auto rounded-t-2xl bg-slate-50 p-4 nice-scroll animate-slide-in">
-              <div className="mb-3 flex items-center justify-between">
-                <h2 className="flex items-center gap-1.5 text-sm font-extrabold">
-                  <SlidersHorizontal size={15} /> Filters
-                </h2>
-                <button
-                  onClick={() => setFiltersOpen(false)}
-                  className="rounded-full bg-slate-200 p-1.5"
-                  aria-label="Close filters"
-                >
-                  <X size={16} />
-                </button>
-              </div>
-              {filterPanel}
-              <button
-                onClick={() => setFiltersOpen(false)}
-                className="mt-3 w-full rounded-xl bg-slate-900 py-3 text-sm font-bold text-white"
-              >
-                Show {filtered.length} products
-              </button>
-            </div>
-          </div>
-        )}
 
-        {/* grid */}
-        <main className="min-w-0 flex-1">
-          {filtered.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-20 text-center">
-              <Package size={40} className="text-slate-300" />
-              <p className="text-lg font-bold text-slate-700">No products found</p>
-              <p className="max-w-sm text-sm text-slate-500">
-                Try a different search term, or clear brand / category / price
-                filters.
-              </p>
-              <button
-                onClick={resetFilters}
-                className="mt-1 flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white"
+          <button
+            type="button"
+            onClick={() => setDrawerOpen(true)}
+            className="relative flex h-10 items-center gap-2 rounded-xl bg-ink px-2.5 text-white shadow-sm transition hover:bg-ink-deep active:scale-95 xl:px-3.5"
+            aria-label={`Open quotation cart, ${itemCount} items`}
+          >
+            <span className="relative">
+              <ShoppingCart size={16} />
+              <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-aadi px-1 text-[9px] font-extrabold tabular-nums text-white ring-2 ring-ink">
+                {itemCount}
+              </span>
+            </span>
+            <span className="hidden text-[11.5px] font-bold tabular-nums xl:inline">
+              Cart
+            </span>
+            <span className="hidden text-[11px] font-semibold tabular-nums text-white/70 2xl:inline">
+              {fmt(grandTotal)}
+            </span>
+          </button>
+
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setIsAccountMenuOpen((v) => !v)}
+              aria-haspopup="menu"
+              aria-expanded={isAccountMenuOpen}
+              className="flex h-10 items-center gap-2 rounded-xl border border-line bg-white py-1 pl-1 pr-2 text-[11.5px] font-bold text-slate-700 shadow-sm transition hover:border-slate-300 hover:text-ink"
+              aria-label="Open account menu"
+            >
+              <span
+                className={`flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br text-[11px] font-extrabold text-white ${
+                  authUser?.name === 'Aditya'
+                    ? 'from-orange-500 to-amber-600'
+                    : authUser?.name === 'Abhijit'
+                      ? 'from-emerald-500 to-green-600'
+                      : 'from-slate-700 to-slate-900'
+                }`}
               >
-                <RotateCcw size={14} /> Reset filters
-              </button>
+                {String(authUser?.name || '?').charAt(0).toUpperCase()}
+              </span>
+              <span className="hidden max-w-[92px] truncate xl:inline">
+                {authUser?.name}
+              </span>
+              <ChevronDown
+                size={13}
+                className={`hidden text-slate-400 transition-transform xl:block ${
+                  isAccountMenuOpen ? 'rotate-180' : ''
+                }`}
+              />
+            </button>
+            {isAccountMenuOpen && (
+              <AccountMenu
+                authUser={authUser}
+                onSettings={openAccountSettings}
+                onSignOut={() => setAuthUser(null)}
+                className="right-0 top-full mt-2"
+              />
+            )}
+          </div>
+        </div>
+      </header>
+
+      {/* ============ CATALOGUE WORKSPACE ============ */}
+      <main className="no-print mx-auto w-full max-w-[1600px] px-3 pb-12 pt-5 sm:px-5 lg:px-6 xl:px-7">
+        {/* page introduction */}
+        <section className="flex flex-col gap-3.5 lg:flex-row lg:items-end lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-[9.5px] font-bold uppercase tracking-[0.2em] text-slate-400">
+              <span className="h-1.5 w-1.5 rounded-full bg-aadi" />
+              Product workspace
             </div>
-          ) : (
-            <>
-              <p className="mb-3 pt-2 text-[13px] font-medium text-slate-500">
-                Showing{' '}
-                <strong className="text-slate-800">
-                  {Math.min(visible, filtered.length)}
-                </strong>{' '}
-                of <strong className="text-slate-800">{filtered.length}</strong>{' '}
-                products
-                {itemCount > 0 && (
-                  <>
-                    {' '}
-                    ·{' '}
-                    <strong className="text-slate-800">
-                      {itemCount} in quote
-                    </strong>
-                  </>
-                )}
-              </p>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 xl:grid-cols-4 2xl:grid-cols-5">
-                {filtered.slice(0, visible).map((p) => (
-                  <ProductCard
-                    key={p.sku}
-                    product={p}
-                    qty={cart[p.sku] || 0}
-                    onAdd={(q) => {
-                      setQty(p.sku, Math.max(1, Number(q) || 1));
-                      showToast(`${p.sku} added to quote`);
-                    }}
-                    onInc={() => setQty(p.sku, (cart[p.sku] || 0) + 1)}
-                    onDec={() => setQty(p.sku, (cart[p.sku] || 0) - 1)}
-                    onEdit={() => openEditModal(p)}
-                    onDelete={p.custom ? () => deleteCustomProduct(p) : undefined}
+            <h2 className="mt-1.5 text-[22px] font-extrabold leading-tight tracking-[-0.025em] text-ink-deep sm:text-[26px]">
+              Product Catalogue
+            </h2>
+            <p className="mt-1 text-[12px] leading-relaxed text-slate-500 sm:text-[12.5px]">
+              Browse and manage hospitality products for your quotations.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:flex lg:items-stretch">
+            {[
+              {
+                label: 'Total products',
+                value: catalog.length,
+                icon: Package,
+              },
+              {
+                label: 'Brands',
+                value: allBrands.length,
+                icon: Building2,
+              },
+              {
+                label: 'Categories',
+                value: categories.length,
+                icon: Tag,
+              },
+              {
+                label: 'In quotation',
+                value: itemCount,
+                icon: ShoppingCart,
+                accent: true,
+              },
+            ].map((metric) => (
+              <div
+                key={metric.label}
+                className={`flex min-w-0 flex-col rounded-xl border bg-white px-3 py-2 shadow-soft ${
+                  metric.accent
+                    ? 'border-aadi/25 bg-gradient-to-br from-white to-orange-50/60'
+                    : 'border-line'
+                }`}
+              >
+                <span className="flex items-center gap-1 text-[8.5px] font-bold uppercase tracking-[0.13em] text-slate-400">
+                  <metric.icon
+                    size={11}
+                    className={metric.accent ? 'text-aadi' : 'text-slate-300'}
                   />
-                ))}
+                  <span className="truncate">{metric.label}</span>
+                </span>
+                <span className="mt-0.5 text-[16px] font-extrabold leading-none tabular-nums tracking-tight text-ink-deep">
+                  {metric.value}
+                </span>
               </div>
-              {visible < filtered.length && (
-                <div className="mt-6 text-center">
+            ))}
+          </div>
+        </section>
+
+        <div className="mt-4 flex items-start gap-5 sm:mt-5">
+          {/* sidebar (desktop) */}
+          <aside className="nice-scroll sticky top-[88px] hidden max-h-[calc(100vh-104px)] w-[252px] shrink-0 overflow-y-auto rounded-2xl border border-line bg-white p-4 shadow-soft lg:block xl:w-[260px]">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="flex items-center gap-1.5 text-[12px] font-extrabold tracking-tight text-ink-deep">
+                <SlidersHorizontal size={14} className="text-slate-400" />
+                Filters
+                {activeFilterCount > 0 && (
+                  <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-ink px-1 text-[9px] font-extrabold tabular-nums text-white">
+                    {activeFilterCount}
+                  </span>
+                )}
+              </h3>
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  onClick={resetFilters}
+                  className="text-[10px] font-bold text-slate-400 transition hover:text-ink"
+                >
+                  Clear all
+                </button>
+              )}
+            </div>
+            {filterPanel}
+          </aside>
+
+          {/* mobile filter drawer */}
+          {filtersOpen && (
+            <div className="fixed inset-0 z-[65] lg:hidden">
+              <div
+                className="glass-scrim absolute inset-0 animate-fade-in"
+                onClick={() => setFiltersOpen(false)}
+              />
+              <aside
+                role="dialog"
+                aria-modal="true"
+                aria-label="Product filters"
+                className="absolute inset-y-0 left-0 flex w-[88%] max-w-[340px] flex-col bg-white shadow-pop animate-drawer-in-left"
+              >
+                <div className="flex shrink-0 items-center justify-between border-b border-line px-4 py-3">
+                  <h3 className="flex items-center gap-1.5 text-[13px] font-extrabold text-ink-deep">
+                    <SlidersHorizontal size={15} className="text-slate-400" />
+                    Filters
+                    {activeFilterCount > 0 && (
+                      <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-ink px-1 text-[9px] font-extrabold text-white">
+                        {activeFilterCount}
+                      </span>
+                    )}
+                  </h3>
                   <button
-                    onClick={() =>
-                      setVisible((v) => v + PAGE_SIZE)
-                    }
-                    className="rounded-xl border-2 border-slate-900 bg-white px-6 py-2.5 text-sm font-bold text-slate-900 transition hover:bg-slate-900 hover:text-white"
+                    type="button"
+                    onClick={() => setFiltersOpen(false)}
+                    className="rounded-lg p-1.5 text-slate-500 transition hover:bg-slate-100"
+                    aria-label="Close filters"
                   >
-                    Load more ({filtered.length - visible} remaining)
+                    <X size={17} />
                   </button>
                 </div>
-              )}
-            </>
+                <div className="nice-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
+                  {filterPanel}
+                </div>
+                <div className="shrink-0 border-t border-line bg-white p-3">
+                  <button
+                    type="button"
+                    onClick={() => setFiltersOpen(false)}
+                    className="flex h-11 w-full items-center justify-center rounded-xl bg-ink text-[12.5px] font-bold text-white shadow-sm transition hover:bg-ink-deep active:scale-[0.99]"
+                  >
+                    Show {filtered.length} products
+                  </button>
+                </div>
+              </aside>
+            </div>
           )}
-        </main>
-      </div>
 
-      {/* ============ DRAWER ============ */}
+          {/* results */}
+          <section className="min-w-0 flex-1">
+            {/* toolbar */}
+            <div className="mb-3.5 flex flex-col gap-2.5 rounded-2xl border border-line bg-white px-3 py-2.5 shadow-soft sm:flex-row sm:items-center sm:justify-between sm:px-3.5">
+              <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                <p className="text-[11.5px] font-medium text-slate-500">
+                  Showing{' '}
+                  <strong className="font-bold tabular-nums text-ink-deep">
+                    {filtered.length ? 1 : 0}–
+                    {Math.min(visible, filtered.length)}
+                  </strong>{' '}
+                  of{' '}
+                  <strong className="font-bold tabular-nums text-ink-deep">
+                    {filtered.length}
+                  </strong>{' '}
+                  products
+                </p>
+                {activeFilterCount > 0 && (
+                  <span className="flex items-center gap-1 rounded-full bg-ink/[0.055] px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-[0.1em] text-ink">
+                    <SlidersHorizontal size={10} />
+                    {activeFilterCount} {activeFilterCount === 1 ? 'filter' : 'filters'}
+                  </span>
+                )}
+                {hasActiveFilters && (
+                  <button
+                    type="button"
+                    onClick={resetFilters}
+                    className="text-[10.5px] font-bold text-slate-400 transition hover:text-aadi"
+                  >
+                    Clear filters
+                  </button>
+                )}
+              </div>
+
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setFiltersOpen(true)}
+                  className="flex h-9 items-center gap-1.5 rounded-lg border border-line bg-white px-2.5 text-[11px] font-bold text-slate-600 transition hover:border-slate-300 hover:text-ink lg:hidden"
+                >
+                  <SlidersHorizontal size={13} />
+                  Filters
+                  {activeFilterCount > 0 && (
+                    <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-ink px-1 text-[9px] font-extrabold text-white">
+                      {activeFilterCount}
+                    </span>
+                  )}
+                </button>
+
+                <div className="relative">
+                  <label htmlFor="catalogue-sort" className="sr-only">
+                    Sort products
+                  </label>
+                  <ArrowDownWideNarrow
+                    size={13}
+                    className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"
+                  />
+                  <select
+                    id="catalogue-sort"
+                    value={sort}
+                    onChange={(e) => setSort(e.target.value)}
+                    className="h-9 cursor-pointer appearance-none rounded-lg border border-line bg-white pl-8 pr-7 text-[11px] font-bold text-slate-600 transition hover:border-slate-300 focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/5"
+                  >
+                    {SORT_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown
+                    size={13}
+                    className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-400"
+                  />
+                </div>
+
+                <div
+                  className="flex items-center gap-0.5 rounded-lg border border-line bg-slate-50 p-0.5"
+                  role="group"
+                  aria-label="Change product layout"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('grid')}
+                    aria-pressed={viewMode === 'grid'}
+                    aria-label="Grid view"
+                    title="Grid view"
+                    className={`flex h-8 w-8 items-center justify-center rounded-md transition ${
+                      viewMode === 'grid'
+                        ? 'bg-white text-ink shadow-sm'
+                        : 'text-slate-400 hover:text-ink'
+                    }`}
+                  >
+                    <LayoutGrid size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('list')}
+                    aria-pressed={viewMode === 'list'}
+                    aria-label="List view"
+                    title="List view"
+                    className={`flex h-8 w-8 items-center justify-center rounded-md transition ${
+                      viewMode === 'list'
+                        ? 'bg-white text-ink shadow-sm'
+                        : 'text-slate-400 hover:text-ink'
+                    }`}
+                  >
+                    <List size={14} />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {filtered.length === 0 ? (
+              <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-20 text-center shadow-soft">
+                <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-50 text-slate-300">
+                  <PackageSearch size={26} />
+                </span>
+                <p className="text-[15px] font-bold text-ink-deep">
+                  No products found
+                </p>
+                <p className="max-w-sm text-[12px] leading-relaxed text-slate-500">
+                  Try a different search term, or clear your brand, category and
+                  price filters.
+                </p>
+                <button
+                  type="button"
+                  onClick={resetFilters}
+                  className="mt-1 flex items-center gap-1.5 rounded-xl bg-ink px-4 py-2.5 text-[12px] font-bold text-white shadow-sm transition hover:bg-ink-deep"
+                >
+                  <RotateCcw size={14} /> Reset filters
+                </button>
+              </div>
+            ) : (
+              <>
+                <div
+                  className={
+                    viewMode === 'grid'
+                      ? 'grid grid-cols-1 gap-3.5 min-[380px]:grid-cols-2 sm:gap-4 lg:grid-cols-3 min-[1440px]:grid-cols-4'
+                      : 'flex flex-col gap-3'
+                  }
+                >
+                  {filtered.slice(0, visible).map((p) =>
+                    viewMode === 'grid' ? (
+                      <ProductCard
+                        key={p.sku}
+                        product={p}
+                        qty={cart[p.sku] || 0}
+                        onAdd={(q) => {
+                          setQty(p.sku, Math.max(1, Number(q) || 1));
+                          showToast(`${p.sku} added to quote`);
+                        }}
+                        onInc={() => setQty(p.sku, (cart[p.sku] || 0) + 1)}
+                        onDec={() => setQty(p.sku, (cart[p.sku] || 0) - 1)}
+                        onEdit={() => openEditModal(p)}
+                        onDelete={
+                          p.custom ? () => deleteCustomProduct(p) : undefined
+                        }
+                      />
+                    ) : (
+                      <ProductListRow
+                        key={p.sku}
+                        product={p}
+                        qty={cart[p.sku] || 0}
+                        onAdd={(q) => {
+                          setQty(p.sku, Math.max(1, Number(q) || 1));
+                          showToast(`${p.sku} added to quote`);
+                        }}
+                        onInc={() => setQty(p.sku, (cart[p.sku] || 0) + 1)}
+                        onDec={() => setQty(p.sku, (cart[p.sku] || 0) - 1)}
+                        onEdit={() => openEditModal(p)}
+                        onDelete={
+                          p.custom ? () => deleteCustomProduct(p) : undefined
+                        }
+                      />
+                    ),
+                  )}
+                </div>
+
+                {visible < filtered.length && (
+                  <div className="mt-7 flex flex-col items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setVisible((v) => v + PAGE_SIZE)}
+                      className="flex items-center gap-2 rounded-xl border border-ink bg-white px-5 py-2.5 text-[12px] font-bold text-ink transition hover:bg-ink hover:text-white active:scale-[0.99]"
+                    >
+                      Load more products
+                      <span className="rounded-full bg-ink/10 px-2 py-0.5 text-[10px] tabular-nums">
+                        {filtered.length - visible} remaining
+                      </span>
+                    </button>
+                    <p className="text-[10px] font-medium text-slate-400">
+                      Showing {Math.min(visible, filtered.length)} of{' '}
+                      {filtered.length} matching products
+                    </p>
+                  </div>
+                )}
+              </>
+            )}
+          </section>
+        </div>
+      </main>
+
+      {/* ============ QUOTATION CART DRAWER ============ */}
       {drawerOpen && (
         <div className="no-print fixed inset-0 z-50">
           <div
-            className="absolute inset-0 bg-slate-900/50 animate-fade-in"
+            className="glass-scrim absolute inset-0 animate-fade-in"
             onClick={() => setDrawerOpen(false)}
           />
-          <aside className="absolute right-0 top-0 flex h-full w-full max-w-md flex-col bg-white shadow-pop animate-slide-in">
-            <div className="flex flex-shrink-0 items-center gap-2 border-b border-slate-200 px-4 py-3">
-              <FileText size={18} className="text-slate-700" />
-              <h2 className="text-[15px] font-extrabold">Quotation</h2>
-              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold tabular-nums text-slate-600">
-                {itemCount} items
+          <aside
+            role="dialog"
+            aria-modal="true"
+            aria-label="Quotation cart"
+            className="cart-glass absolute right-0 top-0 flex h-full w-full max-w-[460px] flex-col animate-drawer-in-right sm:max-w-[480px]"
+          >
+            <div className="flex flex-shrink-0 items-center gap-2.5 border-b border-line/80 px-4 py-3.5">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-ink text-white shadow-sm">
+                <ShoppingCart size={17} />
               </span>
-              <span className="ml-auto max-w-[140px] truncate font-mono text-[11px] text-slate-400" title={details.quoteNo}>
-                {details.quoteNo}
-              </span>
+              <div className="min-w-0">
+                <h2 className="text-[14px] font-extrabold leading-tight tracking-tight text-ink-deep">
+                  Quotation cart
+                </h2>
+                <p className="mt-0.5 flex items-center gap-1.5 text-[10px] font-semibold text-slate-400">
+                  <span className="rounded-full bg-ink/[0.055] px-1.5 py-0.5 tabular-nums text-ink">
+                    {itemCount} {itemCount === 1 ? 'item' : 'items'}
+                  </span>
+                  <span className="max-w-[130px] truncate font-mono" title={details.quoteNo}>
+                    {details.quoteNo}
+                  </span>
+                </p>
+              </div>
               <button
+                type="button"
                 onClick={() => setDrawerOpen(false)}
-                className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
-                aria-label="Close quotation"
+                className="ml-auto rounded-lg p-1.5 text-slate-500 transition hover:bg-white hover:text-ink"
+                aria-label="Close quotation cart"
               >
                 <X size={18} />
               </button>
@@ -3839,89 +4591,109 @@ export default function App() {
               />
 
               {lineItems.length === 0 ? (
-                <div className="flex flex-col items-center justify-center gap-2 p-8 text-center">
-                  <ShoppingCart size={40} className="text-slate-200" />
-                  <p className="font-bold text-slate-700">Your quote is empty</p>
-                  <p className="text-sm text-slate-500">
+                <div className="flex flex-col items-center justify-center gap-2 px-8 py-10 text-center">
+                  <span className="flex h-14 w-14 items-center justify-center rounded-2xl border border-line bg-white text-slate-300 shadow-soft">
+                    <ShoppingCart size={24} />
+                  </span>
+                  <p className="mt-1 text-[13px] font-bold text-ink-deep">
+                    Your quotation is empty
+                  </p>
+                  <p className="max-w-[220px] text-[11.5px] leading-relaxed text-slate-500">
                     Add products with “Add to Quote” to build your quotation.
                   </p>
                   <button
+                    type="button"
                     onClick={() => setDrawerOpen(false)}
-                    className="mt-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white"
+                    className="mt-2 rounded-xl bg-ink px-4 py-2.5 text-[12px] font-bold text-white shadow-sm transition hover:bg-ink-deep"
                   >
                     Browse products
                   </button>
                 </div>
               ) : (
-                <div className="px-4 py-3 pr-1">
-                  <ul className="flex flex-col gap-3">
+                <div className="px-4 py-3">
+                  <ul className="flex flex-col gap-2.5">
                     {lineItems.map((i) => {
                       const adj = adjBasicOf(i);
                       return (
-                      <li
-                        key={i.sku}
-                        className="flex gap-3 rounded-xl border border-slate-200 p-2.5"
-                      >
-                        <div className="h-14 w-14 shrink-0 overflow-hidden">
-                          <ProductImage product={i} size="sm" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-[13px] font-bold" title={i.name}>
-                            {i.name}
-                          </p>
-                          <p className="truncate whitespace-nowrap font-mono text-[11px] text-slate-500">
-                            {i.sku} ·{' '}
-                            {marginPct > 0 && (
-                              <s className="text-slate-400">List: {fmt(i.sellingPrice)} </s>
-                            )}
-                            {marginPct > 0
-                              ? `Disc (${marginPct}%): ${fmt(adj)} + ${i.gst} GST`
-                              : `${fmt(adj)} +${i.gst} GST`}
-                          </p>
-                          <div className="mt-1.5 flex items-center gap-2">
-                            <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-0.5">
+                        <li
+                          key={i.sku}
+                          className="flex gap-3 rounded-xl border border-line/80 bg-white/80 p-2.5 shadow-soft"
+                        >
+                          <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-line/70 bg-white">
+                            <ProductImage product={i} size="sm" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p
+                              className="line-clamp-2 text-[12px] font-bold leading-snug text-ink-deep"
+                              title={i.name}
+                            >
+                              {i.name}
+                            </p>
+                            <p className="mt-0.5 truncate font-mono text-[10px] text-slate-400">
+                              {i.sku}
+                            </p>
+                            <p className="mt-0.5 text-[10.5px] font-medium text-slate-500">
+                              {marginPct > 0 && (
+                                <s className="mr-1 text-slate-400">
+                                  {fmt(i.sellingPrice)}
+                                </s>
+                              )}
+                              <span className="font-bold text-ink">
+                                {fmt(adj)}
+                              </span>{' '}
+                              <span className="text-slate-400">unit</span> +{i.gst} GST
+                            </p>
+                            <div className="mt-1.5 flex items-center gap-2">
+                              <div className="flex items-center gap-0.5 rounded-lg border border-line bg-slate-50 p-0.5">
+                                <button
+                                  type="button"
+                                  onClick={() => setQty(i.sku, i.qty - 1)}
+                                  className="flex h-7 w-7 items-center justify-center rounded-md bg-white text-slate-600 shadow-sm transition hover:bg-slate-100 active:scale-95"
+                                  aria-label={`Decrease quantity for ${i.sku}`}
+                                >
+                                  <Minus size={13} />
+                                </button>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  value={i.qty}
+                                  onChange={(e) =>
+                                    setQty(
+                                      i.sku,
+                                      Math.max(1, Number(e.target.value) || 1),
+                                    )
+                                  }
+                                  className="w-9 bg-transparent text-center text-[12px] font-extrabold tabular-nums text-ink focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
+                                  aria-label={`Quantity for ${i.sku}`}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setQty(i.sku, i.qty + 1)}
+                                  className="flex h-7 w-7 items-center justify-center rounded-md bg-ink text-white shadow-sm transition hover:bg-ink-deep active:scale-95"
+                                  aria-label={`Increase quantity for ${i.sku}`}
+                                >
+                                  <Plus size={13} />
+                                </button>
+                              </div>
+                              <span className="ml-auto text-[12.5px] font-extrabold tabular-nums text-ink-deep">
+                                {fmt(adj * i.qty)}
+                              </span>
                               <button
-                                onClick={() => setQty(i.sku, i.qty - 1)}
-                                className="rounded-md bg-white p-1 shadow-sm hover:bg-slate-200"
-                                aria-label="Decrease"
+                                type="button"
+                                onClick={() => setQty(i.sku, 0)}
+                                className="rounded-md p-1.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600"
+                                aria-label={`Remove ${i.sku}`}
                               >
-                                <Minus size={13} />
-                              </button>
-                              <input
-                                type="number"
-                                min={1}
-                                value={i.qty}
-                                onChange={(e) =>
-                                  setQty(i.sku, Math.max(1, Number(e.target.value) || 1))
-                                }
-                                className="w-12 bg-transparent text-center text-[13px] font-extrabold tabular-nums focus:outline-none"
-                                aria-label={`Quantity for ${i.sku}`}
-                              />
-                              <button
-                                onClick={() => setQty(i.sku, i.qty + 1)}
-                                className="rounded-md bg-slate-900 p-1 text-white hover:bg-slate-700"
-                                aria-label="Increase"
-                              >
-                                <Plus size={13} />
+                                <Trash2 size={14} />
                               </button>
                             </div>
-                            <span className="ml-auto text-[13px] font-extrabold tabular-nums">
-                              {fmt(adj * i.qty)}
-                            </span>
-                            <button
-                              onClick={() => setQty(i.sku, 0)}
-                              className="rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
-                              aria-label={`Remove ${i.sku}`}
-                            >
-                              <Trash2 size={15} />
-                            </button>
                           </div>
-                        </div>
-                      </li>
+                        </li>
                       );
                     })}
                   </ul>
                   <button
+                    type="button"
                     onClick={() => {
                       setCart({});
                       setItemSpecs({});
@@ -3930,7 +4702,7 @@ export default function App() {
                       setSelectedClientId(null);
                       showToast('Quote cleared');
                     }}
-                    className="mt-3 flex items-center gap-1 text-xs font-bold text-slate-400 hover:text-red-600"
+                    className="mt-3 flex items-center gap-1 rounded-lg px-1 py-1 text-[10.5px] font-bold text-slate-400 transition hover:text-rose-600"
                   >
                     <Trash2 size={12} /> Clear quote
                   </button>
@@ -3939,155 +4711,138 @@ export default function App() {
             </div>
 
             {lineItems.length > 0 && (
-                <div className="flex-shrink-0 border-t border-slate-200 bg-white p-4 shadow-lg">
-                  {/* margin / discount adjustment */}
-                  <div className="mb-2.5 rounded-xl bg-slate-100 p-2.5">
-                    <div className="mb-1.5 flex items-center justify-between">
-                      <span className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">
-                        Margin / Discount
-                      </span>
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[11px] font-extrabold tabular-nums ${
-                          marginPct === 0
-                            ? 'bg-slate-200 text-slate-600'
-                            : marginPct > 0
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : 'bg-rose-100 text-rose-700'
+              <div
+                className="shrink-0 border-t border-line/80 bg-white/80 p-3.5 shadow-[0_-14px_34px_-28px_rgba(14,26,43,.55)] backdrop-blur-xl"
+                style={{ paddingBottom: 'max(0.875rem, env(safe-area-inset-bottom))' }}
+              >
+                {/* margin / discount adjustment */}
+                <div className="mb-2.5 rounded-xl border border-line/80 bg-slate-50/80 p-2.5">
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <span className="text-[9.5px] font-extrabold uppercase tracking-[0.13em] text-slate-500">
+                      Margin / Discount
+                    </span>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[10.5px] font-extrabold tabular-nums ${
+                        marginPct === 0
+                          ? 'bg-slate-200 text-slate-600'
+                          : marginPct > 0
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'bg-rose-100 text-rose-700'
+                      }`}
+                    >
+                      {marginLabel(marginPct)}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1">
+                    {MARGIN_PRESETS.map((p) => (
+                      <button
+                        key={p}
+                        onClick={() => setDetail('marginPct', p)}
+                        aria-pressed={marginPct === p}
+                        className={`rounded-lg px-2 py-1 text-[11px] font-extrabold tabular-nums transition active:scale-95 ${
+                          marginPct === p
+                            ? 'bg-ink text-white shadow-sm'
+                            : 'bg-white text-slate-500 hover:bg-slate-100'
                         }`}
                       >
-                        {marginLabel(marginPct)}
+                        {marginLabel(p)}
+                      </button>
+                    ))}
+                    <div className="relative ml-auto">
+                      <input
+                        type="number"
+                        step="0.5"
+                        min={-100}
+                        max={200}
+                        value={details.marginPct}
+                        onChange={(e) => {
+                          const v = Number(e.target.value);
+                          setDetail(
+                            'marginPct',
+                            Number.isFinite(v)
+                              ? Math.min(200, Math.max(-100, v))
+                              : 0,
+                          );
+                        }}
+                        className="w-20 rounded-lg border border-line bg-white py-1 pl-2 pr-6 text-[11px] font-extrabold tabular-nums text-ink focus:border-ink focus:outline-none"
+                        aria-label="Custom margin or discount percent"
+                        title="Custom %"
+                      />
+                      <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] font-bold text-slate-400">
+                        %
                       </span>
                     </div>
-                    <div className="flex flex-wrap items-center gap-1">
-                      {MARGIN_PRESETS.map((p) => (
-                        <button
-                          key={p}
-                          onClick={() => setDetail('marginPct', p)}
-                          aria-pressed={marginPct === p}
-                          className={`rounded-lg px-2 py-1 text-[12px] font-extrabold tabular-nums transition active:scale-95 ${
-                            marginPct === p
-                              ? 'bg-slate-900 text-white shadow-sm'
-                              : 'bg-white text-slate-600 hover:bg-slate-200'
-                          }`}
-                        >
-                          {marginLabel(p)}
-                        </button>
-                      ))}
-                      <div className="relative ml-auto">
-                        <input
-                          type="number"
-                          step="0.5"
-                          min={-100}
-                          max={200}
-                          value={details.marginPct}
-                          onChange={(e) => {
-                            const v = Number(e.target.value);
-                            setDetail(
-                              'marginPct',
-                              Number.isFinite(v)
-                                ? Math.min(200, Math.max(-100, v))
-                                : 0,
-                            );
-                          }}
-                          className="w-20 rounded-lg border border-slate-200 bg-white py-1 pl-2 pr-6 text-[12px] font-extrabold tabular-nums focus:border-slate-900 focus:outline-none"
-                          aria-label="Custom margin or discount percent"
-                          title="Custom %"
-                        />
-                        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[12px] font-bold text-slate-400">
-                          %
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="mt-2 space-y-1 rounded-lg bg-white p-2 text-[12px]">
-                    <div className="flex justify-between text-slate-600">
-                      <span>Total List Price (MRP)</span>
-                      <span className="font-bold tabular-nums">{fmt(totalListPrice)}</span>
-                    </div>
-                    <div className="flex justify-between text-emerald-600 font-semibold">
-                      <span>Discount Applied ({marginPct}%)</span>
-                      <span className="tabular-nums">-{fmt(totalDiscountAmount)}</span>
-                    </div>
-                    <div className="flex justify-between text-slate-600">
-                      <span>Taxable Basic Value</span>
-                      <span className="font-bold tabular-nums">{fmt(subtotal)}</span>
-                    </div>
-                    <div className="flex justify-between text-slate-600">
-                      <span>{intraState ? 'CGST / SGST' : 'IGST'}</span>
-                      <span className="font-bold tabular-nums">
-                        {intraState ? `${inr2.format(cgst)} / ${inr2.format(sgst)}` : inr2.format(igst)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between border-t border-slate-200 pt-1 text-base font-extrabold">
-                      <span>Grand Total</span>
-                      <span className="tabular-nums">{inr2.format(grandTotal)}</span>
-                    </div>
-                  </div>
-                  <dl className="flex flex-col gap-1 text-sm">
-                    {marginPct !== 0 && (
-                      <div className="flex justify-between text-[13px] text-slate-500">
-                        <dt>List price adjust ({marginLabel(marginPct)})</dt>
-                        <dd className="font-bold tabular-nums">applied</dd>
-                      </div>
-                    )}
-                    <div className="flex justify-between text-slate-600">
-                      <dt>Basic Value (excl. GST)</dt>
-                      <dd className="font-bold tabular-nums">{fmt(subtotal)}</dd>
-                    </div>
-                    {intraState ? (
-                      <>
-                        <div className="flex justify-between text-slate-600">
-                          <dt>CGST</dt>
-                          <dd className="font-bold tabular-nums">{inr2.format(cgst)}</dd>
-                        </div>
-                        <div className="flex justify-between text-slate-600">
-                          <dt>SGST</dt>
-                          <dd className="font-bold tabular-nums">{inr2.format(sgst)}</dd>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="flex justify-between text-slate-600">
-                        <dt>IGST</dt>
-                        <dd className="font-bold tabular-nums">{inr2.format(igst)}</dd>
-                      </div>
-                    )}
-                    {freight > 0 && (
-                      <div className="flex justify-between text-slate-600">
-                        <dt>Freight / Delivery</dt>
-                        <dd className="font-bold tabular-nums">{fmt(freight)}</dd>
-                      </div>
-                    )}
-                    <div className="flex justify-between border-t border-slate-200 pt-1.5 text-base font-extrabold">
-                      <dt>Grand Total</dt>
-                      <dd className="tabular-nums">{inr2.format(grandTotal)}</dd>
-                    </div>
-                  </dl>
-                  <div className="mt-3 grid grid-cols-2 gap-2">
-                    <button
-                      onClick={() => {
-                        saveQuote();
-                        window.print();
-                      }}
-                      className="flex items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-3 py-2.5 text-[13px] font-bold text-white transition hover:bg-slate-700"
-                    >
-                      <Printer size={15} /> Print / Save PDF
-                    </button>
-                    <button
-                      onClick={() => saveQuote()}
-                      className="flex items-center justify-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2.5 text-[13px] font-bold text-white transition hover:bg-indigo-700"
-                    >
-                      <Archive size={15} /> Save Quote
-                    </button>
-                  </div>
-                  <div className="mt-2">
-                    <button
-                      onClick={handleCopyWhatsapp}
-                      className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-[#25D366] px-3 py-2.5 text-[13px] font-bold text-white transition hover:brightness-95"
-                    >
-                      <MessageCircle size={15} /> Copy WhatsApp Text
-                    </button>
                   </div>
                 </div>
+
+                {/* totals — single source of truth for the quote summary */}
+                <div className="space-y-1 rounded-xl border border-line/80 bg-white p-2.5 text-[11px]">
+                  <div className="flex justify-between text-slate-500">
+                    <span>Total list price</span>
+                    <span className="font-bold tabular-nums">{fmt(totalListPrice)}</span>
+                  </div>
+                  <div className="flex justify-between font-semibold text-emerald-600">
+                    <span>Discount applied ({marginPct}%)</span>
+                    <span className="tabular-nums">-{fmt(totalDiscountAmount)}</span>
+                  </div>
+                  <div className="flex justify-between text-slate-500">
+                    <span>Taxable basic value</span>
+                    <span className="font-bold tabular-nums">{fmt(subtotal)}</span>
+                  </div>
+                  <div className="flex justify-between text-slate-500">
+                    <span>{intraState ? 'CGST / SGST' : 'IGST'}</span>
+                    <span className="font-bold tabular-nums">
+                      {intraState
+                        ? `${inr2.format(cgst)} / ${inr2.format(sgst)}`
+                        : inr2.format(igst)}
+                    </span>
+                  </div>
+                  {freight > 0 && (
+                    <div className="flex justify-between text-slate-500">
+                      <span>Freight / delivery</span>
+                      <span className="font-bold tabular-nums">{fmt(freight)}</span>
+                    </div>
+                  )}
+                  <div className="flex items-end justify-between border-t border-line pt-2">
+                    <span className="text-[11px] font-bold uppercase tracking-[0.1em] text-slate-500">
+                      Grand total
+                    </span>
+                    <span className="text-[17px] font-extrabold leading-none tabular-nums tracking-tight text-ink-deep">
+                      {inr2.format(grandTotal)}
+                    </span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => saveQuote()}
+                  className="mt-2.5 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-ink text-[12.5px] font-bold text-white shadow-sm transition hover:bg-ink-deep active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aadi/50 focus-visible:ring-offset-2"
+                  title="Save this quotation to Records"
+                >
+                  Proceed to Create Quotation
+                  <ArrowRight size={15} />
+                </button>
+
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      saveQuote();
+                      window.print();
+                    }}
+                    className="flex h-9 items-center justify-center gap-1.5 rounded-xl border border-line bg-white px-2 text-[10.5px] font-bold text-slate-600 transition hover:border-slate-300 hover:text-ink"
+                  >
+                    <Printer size={14} /> Print / PDF
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCopyWhatsapp}
+                    className="flex h-9 items-center justify-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50/70 px-2 text-[10.5px] font-bold text-emerald-700 transition hover:bg-emerald-100"
+                  >
+                    <MessageCircle size={14} /> WhatsApp text
+                  </button>
+                </div>
+              </div>
             )}
           </aside>
         </div>
