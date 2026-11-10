@@ -3,13 +3,13 @@ import { getAnalytics } from 'firebase/analytics';
 import { getFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
-  apiKey: 'AIzaSyC3YVVkrok8xX5BH7teuqyRgy24pyFknOc',
-  authDomain: 'aadi-quotation-system.firebaseapp.com',
-  projectId: 'aadi-quotation-system',
-  storageBucket: 'aadi-quotation-system.firebasestorage.app',
-  messagingSenderId: '479301617987',
-  appId: '1:479301617987:web:3b277db4f5fec0f647c7f6',
-  measurementId: 'G-C6P2DDRXE0',
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
 };
 
 const app = initializeApp(firebaseConfig);
