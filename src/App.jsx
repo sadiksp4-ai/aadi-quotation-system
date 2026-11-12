@@ -9,6 +9,7 @@ import {
   Check,
   ChevronDown,
   Copy,
+  Download,
   Eye,
   EyeOff,
   Landmark,
@@ -42,13 +43,32 @@ import {
 import rawProducts from './data/products.json';
 import rawClients from './data/clients.json';
 import BOQParser from './components/BOQParser';
+import QuoteBuilder from './components/QuoteBuilder';
+import {
+  addDaysISO,
+  draftFromCart,
+  draftFromQuote,
+  documentModel,
+  generateQuoteNumber,
+  normalizeStatus,
+  QUOTE_STATUSES,
+  QUOTE_STATUS_STYLES,
+  QUOTE_STATUS_TABS,
+} from './lib/quotation';
+import {
+  subscribeQuotations,
+  saveQuotation,
+  updateQuotationStatus,
+  deleteQuotation,
+} from './lib/quotationStore';
+import { downloadQuotationPdf } from './lib/quotationPdf';
+import { printQuotation } from './lib/quotationPrint';
 import { db } from './firebase';
 import {
   collection,
   doc,
   onSnapshot,
   setDoc,
-  updateDoc,
   deleteDoc,
 } from 'firebase/firestore';
 
@@ -199,40 +219,10 @@ function isIntraStateSupply(placeOfSupply, stateCode) {
 
 /* ---------------- quotation lifecycle helpers ---------------- */
 
-const QUOTE_STATUSES = ['Draft', 'Sent', 'PO Received', 'Revised', 'Expired'];
-
-const QUOTE_STATUS_STYLES = {
-  Draft: 'border-slate-200 bg-slate-100 text-slate-700',
-  Sent: 'border-blue-200 bg-blue-100 text-blue-800',
-  'PO Received': 'border-emerald-200 bg-emerald-100 text-emerald-800',
-  Revised: 'border-amber-200 bg-amber-100 text-amber-800',
-  Expired: 'border-rose-200 bg-rose-100 text-rose-800',
-};
-
-const QUOTE_STATUS_TABS = [
-  { key: 'All', label: 'All', match: () => true },
-  {
-    key: 'Active',
-    label: 'Active / Sent',
-    match: (q) => ['Sent', 'Revised'].includes(normalizeQuoteStatus(q)),
-  },
-  {
-    key: 'PO Received',
-    label: 'PO Received',
-    match: (q) => normalizeQuoteStatus(q) === 'PO Received',
-  },
-  {
-    key: 'Drafts',
-    label: 'Drafts',
-    match: (q) => normalizeQuoteStatus(q) === 'Draft',
-  },
-];
-
-function normalizeQuoteStatus(quote) {
-  const raw = String(quote?.status || 'Draft').trim();
-  if (raw === 'Confirmed' || raw === 'Invoice Generated') return 'PO Received';
-  if (raw === 'Active') return 'Sent';
-  return QUOTE_STATUSES.includes(raw) ? raw : 'Draft';
+function normalizeQuoteStatus(quoteOrStatus) {
+  const raw =
+    typeof quoteOrStatus === 'string' ? quoteOrStatus : quoteOrStatus?.status;
+  return normalizeStatus(raw);
 }
 
 function quoteMatchesStatusFilter(quote, filterKey) {
@@ -1260,6 +1250,8 @@ function QuoteStatusSelect({ value, onChange }) {
 
 function QuoteActionMenu({
   onLoad,
+  onView,
+  onDownload,
   onPrint,
   onDuplicate,
   onWhatsApp,
@@ -1273,8 +1265,8 @@ function QuoteActionMenu({
   const toggleMenu = () => {
     if (!open && btnRef.current) {
       const r = btnRef.current.getBoundingClientRect();
-      const width = 208;
-      const height = 260;
+      const width = 224;
+      const height = 330;
       setPos({
         top: Math.max(8, Math.min(r.bottom + 6, window.innerHeight - height - 8)),
         left: Math.max(8, Math.min(r.right - width, window.innerWidth - width - 8)),
@@ -1339,14 +1331,16 @@ function QuoteActionMenu({
             position: 'fixed',
             top: pos.top,
             left: pos.left,
-            width: 208,
+            width: 224,
             zIndex: 80,
           }}
           className="rounded-xl border border-slate-200 bg-white py-1 shadow-pop animate-fade-in"
         >
-          {item('Load / Edit', Pencil, onLoad)}
-          {item('View / Print PDF', Printer, onPrint)}
-          {item('Duplicate / Revise', Copy, onDuplicate)}
+          {item('Edit quotation', Pencil, onLoad)}
+          {item('View quotation', Eye, onView)}
+          {item('Download PDF', Download, onDownload, 'text-blue-700')}
+          {item('Print', Printer, onPrint)}
+          {item('Duplicate as draft', Copy, onDuplicate)}
           {item(
             'Send via WhatsApp',
             MessageCircle,
@@ -2667,6 +2661,9 @@ export default function App() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [details, setDetails] = useState(loadDetails);
+  const [builderOpen, setBuilderOpen] = useState(false);
+  const [builderInitial, setBuilderInitial] = useState(null);
+  const [builderStartPreview, setBuilderStartPreview] = useState(false);
   const [visible, setVisible] = useState(PAGE_SIZE);
   const [toast, setToast] = useState('');
   const toastTimer = useRef(null);
@@ -2730,20 +2727,10 @@ export default function App() {
     }
   }, [customProducts]);
 
-  // real-time Firestore sync for quotations
+  // real-time quotation sync (Firestore in production, local store in test mode)
   useEffect(() => {
-    const unsub = onSnapshot(
-      collection(db, 'quotations'),
-      (snap) => {
-        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        list.sort((a, b) => {
-          const ta = new Date(a.timestamp || a.updatedAt || a.createdAt || 0).getTime();
-          const tb = new Date(b.timestamp || b.updatedAt || b.createdAt || 0).getTime();
-          return tb - ta;
-        });
-        setArchive(list);
-      },
-      (err) => console.error('quotations snapshot error', err),
+    const unsub = subscribeQuotations(setArchive, (err) =>
+      console.error('quotations snapshot error', err),
     );
     return () => unsub();
   }, []);
@@ -2929,9 +2916,7 @@ export default function App() {
       return null;
     }
     const quote = buildQuoteObject(statusOverride);
-    setDoc(doc(db, 'quotations', quote.id), quote).catch((err) =>
-      console.error('save quote error', err),
-    );
+    saveQuotation(quote).catch((err) => console.error('save quote error', err));
     setCurrentQuoteId(quote.id);
     showToast(`Quote ${quote.quoteNo} saved (${quote.status})`);
     return quote;
@@ -2973,19 +2958,16 @@ export default function App() {
   };
 
   const updateQuoteStatus = (id, status) => {
-    updateDoc(doc(db, 'quotations', id), {
-      status,
-      updatedAt: new Date().toISOString(),
-    }).catch((err) => console.error('update status error', err));
+    updateQuotationStatus(id, status).catch((err) =>
+      console.error('update status error', err),
+    );
     showToast(`Quote marked as ${status}`);
   };
 
   const requestDeleteQuote = (q) => setDeleteTarget(q);
 
   const deleteQuote = (id) => {
-    deleteDoc(doc(db, 'quotations', id)).catch((err) =>
-      console.error('delete quote error', err),
-    );
+    deleteQuotation(id).catch((err) => console.error('delete quote error', err));
     if (currentQuoteId === id) setCurrentQuoteId(null);
     showToast('Quote deleted');
   };
@@ -2996,11 +2978,8 @@ export default function App() {
     setDeleteTarget(null);
   };
 
-  const duplicateQuote = (q) => {
-    const base = String(q.quoteNo || 'AE/QTN/2026-001').replace(
-      /-R\d+\s*$/i,
-      '',
-    );
+  const nextRevisionNumber = (q) => {
+    const base = String(q.quoteNo || 'AE/QTN/2026-001').replace(/-R\d+\s*$/i, '');
     let maxRevision = 0;
     for (const item of archive) {
       const qn = String(item.quoteNo || '');
@@ -3010,25 +2989,33 @@ export default function App() {
         if (Number.isFinite(n)) maxRevision = Math.max(maxRevision, n);
       }
     }
-    const quoteNo = `${base}-R${maxRevision + 1}`;
-    const now = new Date().toISOString();
+    return `${base}-R${maxRevision + 1}`;
+  };
+
+  const duplicateQuote = (q) => {
+    const source = draftFromQuote(q, { user: authUser });
+    const quoteNo = nextRevisionNumber(q);
+    const quoteDate = todayISO();
     const copy = {
-      ...q,
-      id: `q_${Date.now()}`,
+      ...source,
+      id: null,
       quoteNo,
+      quoteDate,
+      validUntil: addDaysISO(quoteDate, 15),
       status: 'Draft',
-      isInvoice: false,
-      revisionOf: base,
-      createdBy: authUser?.name || q.createdBy || '',
-      createdAt: now,
-      updatedAt: now,
-      timestamp: now,
+      finalized: false,
+      createdAt: null,
+      updatedAt: null,
+      createdBy: authUser?.name || source.createdBy || '',
+      createdByEmail: authUser?.email || source.createdByEmail || '',
+      revisionOf: String(q.quoteNo || '').replace(/-R\d+\s*$/i, ''),
     };
-    setDoc(doc(db, 'quotations', copy.id), copy).catch((err) =>
-      console.error('duplicate quote error', err),
-    );
-    loadQuote(copy);
-    showToast(`Revision ${quoteNo} created as draft`);
+    setBuilderInitial(copy);
+    setBuilderStartPreview(false);
+    setBuilderOpen(true);
+    setRecordsOpen(false);
+    setDrawerOpen(false);
+    showToast(`Revision ${quoteNo} opened as a new draft`);
   };
 
   const sendQuoteWhatsApp = (q) => {
@@ -3071,20 +3058,96 @@ export default function App() {
       id: `inv_${Date.now()}`,
       quoteNo: String(q.quoteNo || '').replace('AE/QTN/', 'AE/INV/'),
       isInvoice: true,
-      status: 'Invoice Generated',
+      status: 'Approved',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       timestamp: new Date().toISOString(),
     };
-    setDoc(doc(db, 'quotations', invoice.id), invoice).catch((err) =>
+    saveQuotation(invoice).catch((err) =>
       console.error('convert invoice error', err),
     );
     showToast(`Converted to Tax Invoice ${invoice.quoteNo}`);
   };
 
+  const openQuoteBuilderFromCart = () => {
+    const existing = currentQuoteId
+      ? archive.find((q) => q.id === currentQuoteId)
+      : null;
+    const base = draftFromCart({
+      lines: lineItems,
+      details,
+      archive,
+      user: authUser,
+    });
+    const initial = {
+      ...base,
+      id: existing?.id || currentQuoteId || null,
+      status: existing ? normalizeQuoteStatus(existing) : 'Draft',
+      finalized: existing ? Boolean(existing.finalized) : false,
+      createdAt: existing?.createdAt || null,
+      updatedAt: existing?.updatedAt || null,
+      createdBy: existing?.createdBy || authUser?.name || '',
+      createdByEmail: existing?.createdByEmail || authUser?.email || '',
+    };
+    setBuilderInitial(initial);
+    setBuilderStartPreview(false);
+    setBuilderOpen(true);
+    setDrawerOpen(false);
+    setRecordsOpen(false);
+  };
+
+  const openQuoteBuilderFromRecord = (q, { preview = false } = {}) => {
+    const source = draftFromQuote(q, { user: authUser });
+    setBuilderInitial(source);
+    setBuilderStartPreview(preview);
+    setBuilderOpen(true);
+    setDrawerOpen(false);
+    setRecordsOpen(false);
+  };
+
+  const viewRecordQuote = (q) => openQuoteBuilderFromRecord(q, { preview: true });
+
+  const downloadRecordQuote = async (q) => {
+    try {
+      await downloadQuotationPdf(documentModel(draftFromQuote(q, { user: authUser })));
+      showToast(`Quote ${q.quoteNo} PDF downloaded`);
+    } catch (err) {
+      console.error('download record quote error', err);
+      showToast('Could not download the quotation PDF');
+    }
+  };
+
   const reprintQuote = (q) => {
-    loadQuote(q);
-    setTimeout(() => window.print(), 200);
+    printQuotation(documentModel(draftFromQuote(q, { user: authUser })));
+    showToast('Opening print preview');
+  };
+
+  const closeBuilder = () => {
+    setBuilderOpen(false);
+    setBuilderInitial(null);
+    setBuilderStartPreview(false);
+  };
+
+  const handleBuilderSave = async (record) => {
+    const saved = await saveQuotation(record);
+    setCurrentQuoteId(saved.id);
+    return saved;
+  };
+
+  const handleBuilderUpdateStatus = async (id, status) => {
+    await updateQuotationStatus(id, status);
+  };
+
+  const handleBuilderDelete = async (id) => {
+    try {
+      await deleteQuotation(id);
+      if (currentQuoteId === id) setCurrentQuoteId(null);
+      closeBuilder();
+      showToast('Quotation deleted');
+    } catch (err) {
+      console.error('delete builder quote error', err);
+      showToast('Could not delete the quotation');
+    }
   };
 
   const openAddModal = () => {
@@ -3909,6 +3972,34 @@ export default function App() {
     return <LoginView onLogin={setAuthUser} />;
   }
 
+  if (builderOpen && builderInitial) {
+    return (
+      <>
+        <QuoteBuilder
+          key={builderInitial.id || builderInitial.quoteNo || 'new-quotation'}
+          initialDraft={builderInitial}
+          archive={archive}
+          clients={clients}
+          catalog={catalog}
+          user={authUser}
+          startPreview={builderStartPreview}
+          onClose={closeBuilder}
+          onSave={handleBuilderSave}
+          onUpdateStatus={handleBuilderUpdateStatus}
+          onDelete={handleBuilderDelete}
+          showToast={showToast}
+        />
+        {toast && (
+          <div className="no-print fixed bottom-5 left-1/2 z-[120] -translate-x-1/2 animate-fade-in">
+            <p className="flex items-center gap-1.5 whitespace-nowrap rounded-full bg-slate-900 px-4 py-2 text-[13px] font-bold text-white shadow-pop">
+              <Check size={14} className="text-emerald-400" /> {toast}
+            </p>
+          </div>
+        )}
+      </>
+    );
+  }
+
   return (
     <div className="catalogue-shell min-h-screen overflow-x-hidden">
       {/* ============ MOBILE HEADER ============ */}
@@ -3934,9 +4025,9 @@ export default function App() {
           <div className="flex shrink-0 items-center gap-1.5">
             <button
               type="button"
-              onClick={() => setDrawerOpen(true)}
+              onClick={openQuoteBuilderFromCart}
               className="relative flex h-9 w-9 items-center justify-center rounded-full bg-ink text-white shadow-sm transition active:scale-95"
-              aria-label={`Open quotation cart, ${itemCount} items`}
+              aria-label={`Open quote builder, ${itemCount} items`}
             >
               <ShoppingCart size={16} />
               <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-aadi px-1 text-[9px] font-extrabold tabular-nums text-white ring-2 ring-white">
@@ -4013,6 +4104,14 @@ export default function App() {
         </div>
 
         <div className="no-scrollbar flex gap-1.5 overflow-x-auto px-3 pb-2">
+          <button
+            type="button"
+            onClick={openQuoteBuilderFromCart}
+            className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-amber-300 bg-gradient-to-b from-amber-100 to-amber-200 px-2.5 text-[11px] font-extrabold text-ink-deep shadow-sm transition active:scale-95"
+            aria-label="Create new quote"
+          >
+            <Plus size={13} className="text-amber-700" /> Create New Quote
+          </button>
           <button
             type="button"
             onClick={() => setBoqOpen(true)}
@@ -4129,9 +4228,21 @@ export default function App() {
 
           <button
             type="button"
-            onClick={() => setDrawerOpen(true)}
+            onClick={openQuoteBuilderFromCart}
+            className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-amber-300 bg-gradient-to-b from-amber-100 to-amber-200 px-2.5 text-[11.5px] font-extrabold text-ink-deep shadow-sm transition hover:border-amber-400 hover:from-amber-200 hover:to-amber-300 active:scale-95 xl:px-3.5"
+            title="Create a new quotation"
+            aria-label="Create new quote"
+          >
+            <Plus size={15} className="text-amber-700" />
+            <span className="hidden lg:inline">Create New Quote</span>
+            <span className="lg:hidden">New</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={openQuoteBuilderFromCart}
             className="relative flex h-10 items-center gap-2 rounded-xl bg-ink px-2.5 text-white shadow-sm transition hover:bg-ink-deep active:scale-95 xl:px-3.5"
-            aria-label={`Open quotation cart, ${itemCount} items`}
+            aria-label={`Open quote builder, ${itemCount} items`}
           >
             <span className="relative">
               <ShoppingCart size={16} />
@@ -4815,9 +4926,9 @@ export default function App() {
 
                 <button
                   type="button"
-                  onClick={() => saveQuote()}
+                  onClick={openQuoteBuilderFromCart}
                   className="mt-2.5 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-ink text-[12.5px] font-bold text-white shadow-sm transition hover:bg-ink-deep active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aadi/50 focus-visible:ring-offset-2"
-                  title="Save this quotation to Records"
+                  title="Open the full quotation workspace"
                 >
                   Proceed to Create Quotation
                   <ArrowRight size={15} />
@@ -4962,7 +5073,9 @@ export default function App() {
                           </td>
                           <td className="px-3 py-2">
                             <QuoteActionMenu
-                              onLoad={() => loadQuote(q)}
+                              onLoad={() => openQuoteBuilderFromRecord(q)}
+                              onView={() => viewRecordQuote(q)}
+                              onDownload={() => downloadRecordQuote(q)}
                               onPrint={() => reprintQuote(q)}
                               onDuplicate={() => duplicateQuote(q)}
                               onWhatsApp={() => sendQuoteWhatsApp(q)}
